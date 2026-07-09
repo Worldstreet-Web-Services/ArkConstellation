@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/params"
 	dbm "github.com/cosmos/cosmos-db"

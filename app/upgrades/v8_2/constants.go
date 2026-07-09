@@ -1,8 +1,8 @@
 package v8_2
 
 import (
-	"cosmossdk.io/store/types"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades"
+	"github.com/cosmos/cosmos-sdk/store/v2/types"
 )
 
 const (
