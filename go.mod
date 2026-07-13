@@ -5,7 +5,7 @@ go 1.25.9
 replace (
 	// use cosmos fork of keyring
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
-	github.com/cosmos/evm => github.com/MANTRA-Chain/evm v0.0.0-20260710013924-0b5df49c610c
+	github.com/cosmos/evm => github.com/MANTRA-Chain/evm v0.0.0-20260713080559-e17785307912
 
 	// branch: release/1.17 (matches cosmos/evm v0.7.x)
 	github.com/ethereum/go-ethereum => github.com/cosmos/go-ethereum v1.17.2-cosmos-0
