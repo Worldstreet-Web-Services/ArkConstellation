@@ -148,9 +148,6 @@ import (
 	vmrunner "github.com/cosmos/evm/x/vm/runner"
 	evmtypes "github.com/cosmos/evm/x/vm/types"
 	"github.com/cosmos/gogoproto/proto"
-	ratelimit "github.com/cosmos/ibc-apps/modules/rate-limiting/v10"
-	ratelimitkeeper "github.com/cosmos/ibc-apps/modules/rate-limiting/v10/keeper"
-	ratelimittypes "github.com/cosmos/ibc-apps/modules/rate-limiting/v10/types"
 	ica "github.com/cosmos/ibc-go/v11/modules/apps/27-interchain-accounts"
 	icacontroller "github.com/cosmos/ibc-go/v11/modules/apps/27-interchain-accounts/controller"
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v11/modules/apps/27-interchain-accounts/controller/keeper"
@@ -160,6 +157,9 @@ import (
 	icahosttypes "github.com/cosmos/ibc-go/v11/modules/apps/27-interchain-accounts/host/types"
 	icatypes "github.com/cosmos/ibc-go/v11/modules/apps/27-interchain-accounts/types"
 	ibccallbacks "github.com/cosmos/ibc-go/v11/modules/apps/callbacks"
+	ratelimit "github.com/cosmos/ibc-go/v11/modules/apps/rate-limiting"
+	ratelimitkeeper "github.com/cosmos/ibc-go/v11/modules/apps/rate-limiting/keeper"
+	ratelimittypes "github.com/cosmos/ibc-go/v11/modules/apps/rate-limiting/types"
 	ibctransfer "github.com/cosmos/ibc-go/v11/modules/apps/transfer"
 	transferkeeper "github.com/cosmos/ibc-go/v11/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v11/modules/apps/transfer/types"
@@ -289,7 +289,7 @@ type App struct {
 	ICAControllerKeeper icacontrollerkeeper.Keeper
 	TransferKeeper      transferkeeper.Keeper
 	WasmKeeper          wasmkeeper.Keeper
-	RateLimitKeeper     ratelimitkeeper.Keeper
+	RateLimitKeeper     *ratelimitkeeper.Keeper
 	CallbackKeeper      ibccallbackskeeper.ContractKeeper
 
 	// ICS
@@ -647,17 +647,17 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// Create RateLimit keeper
-	clientKeeper := app.IBCKeeper.ClientKeeper
-	app.RateLimitKeeper = *ratelimitkeeper.NewKeeper(
+	// Create RateLimit keeper. The ibc-go rate-limiting keeper no longer takes a
+	// params subspace or an ICS4 wrapper in its constructor, ICS4 wrapper is
+	// wired later when the transfer stack is assembled (see SetICS4Wrapper).
+	app.RateLimitKeeper = ratelimitkeeper.NewKeeper(
 		appCodec,
+		app.AccountKeeper.AddressCodec(),
 		runtime.NewKVStoreService(keys[ratelimittypes.StoreKey]),
-		app.GetSubspace(ratelimittypes.ModuleName),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		app.IBCKeeper.ChannelKeeper,
+		app.IBCKeeper.ClientKeeper,
 		app.BankKeeper,
-		app.IBCKeeper.ChannelKeeper,
-		clientKeeper,
-		app.IBCKeeper.ChannelKeeper,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
 	// ICA Controller keeper
@@ -788,12 +788,18 @@ func New(
 	// into the stack via SetUnderlyingApplication (recv path) and SetICS4Wrapper
 	// (send path) instead of taking the wrapped module as a constructor arg.
 	callbacksMiddleware := ibccallbacks.NewIBCMiddleware(app.CallbackKeeper, maxCallbackGas)
-	callbacksMiddleware.SetICS4Wrapper(app.RateLimitKeeper) // send: callbacks -> ratelimit
 	callbacksMiddleware.SetUnderlyingApplication(transferStack)
 	transferStack = callbacksMiddleware
 	// register escrow address for tokenfactory when channel opens
 	transferStack = tokenfactory.NewIBCModule(transferStack, app.TokenFactoryKeeper)
-	transferStack = ratelimit.NewIBCMiddleware(app.RateLimitKeeper, transferStack)
+	// ibc-go rate-limiting middleware: send-side checks live in the middleware's
+	// SendPacket, so it must be the ICS4 wrapper on the send path (pointing its own
+	// wrapper at the channel keeper). On recv it guards the wrapped stack.
+	rateLimitMiddleware := ratelimit.NewIBCMiddleware(app.RateLimitKeeper)
+	rateLimitMiddleware.SetUnderlyingApplication(transferStack)
+	app.RateLimitKeeper.SetICS4Wrapper(app.IBCKeeper.ChannelKeeper)
+	callbacksMiddleware.SetICS4Wrapper(rateLimitMiddleware) // send: callbacks -> ratelimit -> channel
+	transferStack = rateLimitMiddleware
 	icsProviderMiddleware := icsprovider.NewIBCMiddleware(&app.ProviderKeeper)
 	icsProviderMiddleware.SetUnderlyingApplication(transferStack)
 	transferStack = icsProviderMiddleware
@@ -846,7 +852,7 @@ func New(
 
 	storeProvider := app.IBCKeeper.ClientKeeper.GetStoreProvider()
 	tmLightClientModule := ibctm.NewLightClientModule(appCodec, storeProvider)
-	clientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
+	app.IBCKeeper.ClientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
 	// wasmLightClientModule := ibcwasm.NewLightClientModule(app.WasmKeeper, storeProvider)
 	// clientKeeper.AddRoute(ibcwasmtypes.ModuleName, &wasmLightClientModule)
 
@@ -944,7 +950,7 @@ func New(
 		ibctransfer.NewAppModule(&app.TransferKeeper),
 		ica.NewAppModule(&app.ICAControllerKeeper, &app.ICAHostKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
-		ratelimit.NewAppModule(appCodec, app.RateLimitKeeper),
+		ratelimit.NewAppModule(app.RateLimitKeeper),
 
 		// ics
 		providerModule,
@@ -1602,7 +1608,7 @@ func BlockedAddresses() map[string]bool {
 func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper { //nolint:staticcheck
 	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey) //nolint:staticcheck
 	// ibc-go v11 removed the params ParamKeyTable for ibc/ica/transfer (self-managed params now).
-	paramsKeeper.Subspace(ratelimittypes.ModuleName).WithKeyTable(ratelimittypes.ParamKeyTable())
+	// The ibc-go rate-limiting module also self-manages its state (no params subspace).
 	paramsKeeper.Subspace(providertypes.ModuleName).WithKeyTable(providertypes.ParamKeyTable())
 
 	return paramsKeeper
