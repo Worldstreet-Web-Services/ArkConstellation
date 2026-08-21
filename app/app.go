@@ -1238,7 +1238,7 @@ func (app *App) PreBlocker(ctx sdk.Context, _ *abci.RequestFinalizeBlock) (*sdk.
 	case "mantra-1":
 		upgradeHeight = 17449399
 	case "mantra-dukong-1":
-		upgradeHeight = 16107452
+		upgradeHeight = 16107460
 	}
 
 	if upgradeHeight != 0 && ctx.BlockHeight() == upgradeHeight {
