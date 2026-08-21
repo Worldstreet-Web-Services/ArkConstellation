@@ -1,94 +1,83 @@
-# Mantrachain
+# ArkConstellation
 
-Mantrachain is a global real-world assets platform built on blockchain technology. It leverages advanced blockchain features to facilitate the tokenization and trading of real-world assets.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Getting Started](#getting-started)
-- [Development](#development)
-- [Architecture](#architecture)
-- [Modules](#modules)
-- [Security](#security)
-- [Contributing](#contributing)
+A sovereign, EVM-compatible L1 blockchain forked from [`MANTRA-Chain/mantrachain`](https://github.com/MANTRA-Chain/mantrachain). Built on Cosmos SDK + CometBFT + `cosmos/evm`.
 
 ## Overview
 
-Mantrachain is designed to bridge the gap between traditional assets and the blockchain world. By enabling the tokenization of real-world assets, it opens up new possibilities for asset management, trading, and financial innovation.
+ArkConstellation is a permissioned, EVM-compatible Layer 1 chain targeting production genesis within a 3-day build sprint. It inherits MANTRA's battle-tested integration of Cosmos SDK with EVM execution via `cosmos/evm`, with a module set and parameter set explicitly tuned for this chain's use case rather than MANTRA's regulated RWA positioning.
 
-## Features
+## Stack
 
-- Real-world asset tokenization
-- Advanced blockchain technology integration
-- Multi-token support for transaction fees
-- Custom fee market implementation
-- Cosmos SDK-based architecture
+| Component | Version | Source |
+|-----------|---------|--------|
+| CometBFT | `v0.38.23` | Upstream, unmodified |
+| Cosmos SDK | `v0.53.6-v8-mantra-1` | MANTRA fork (diff required) |
+| `cosmos/evm` | `v0.6.2-v8-mantra-1` | MANTRA fork (diff required) |
+| IBC-go | `v10.5.1` | Upstream, unmodified |
+| Go toolchain | `1.25.0` | Per `go.mod` |
 
 ## Getting Started
 
-To get started with Mantrachain, you'll need to set up your development environment.
-
 ### Prerequisites
 
-- Go 1.23 or later
+- Go `1.25.0` or later
+- `make`
+- `gcc` (required for ledger support)
 
-### Installation
+### Build
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/MANTRA-Chain/mantrachain.git
-   cd mantrachain
-   ```
+```bash
+git clone https://github.com/Worldstreet-Web-Services/ArkConstellation.git
+cd ArkConstellation
+make build
+```
 
-2. Build the project:
-   ```bash
-   make install
-   ```
+The compiled binary is output to `./build/mantrachaind`.
 
-## Development
+### Pre-built Binaries
 
+Pre-compiled binaries are published automatically by CI on every push to `base-genesis` and on every version tag. Download them from the **Actions** tab → most recent passing run → **Artifacts** → `chain-binary`. SHA-256 checksums are included.
 
-
-### Testing
-
-To run unit tests:
+### Run Tests
 
 ```bash
 make test-unit
 ```
 
+## Repository Layout
 
+```
+.
+├── app/                  # State machine wiring (app.go, module manager)
+├── cmd/                  # Binary entrypoints
+├── x/                    # Custom Cosmos modules
+├── networks/
+│   ├── devnet/           # pystarport local testnet configs
+│   └── mainnet/          # Production genesis.json and gentx submissions
+├── scripts/
+│   ├── chaos/            # RPC fuzzer and adversarial test scripts
+│   └── genesis/          # gentx validation and genesis assembly
+└── ops/
+    ├── docker/           # Validator and sentry node container definitions
+    ├── monitoring/       # Prometheus configs and Grafana dashboards
+    └── runbooks/         # Incident response procedures
+```
 
 ## Architecture
 
-Mantrachain follows the Cosmos SDK architecture and implements several custom modules to achieve its functionality. The project uses Architecture Decision Records (ADRs) to document important architectural decisions.
-
-For more information on the architecture and design decisions, please refer to the [ADR directory](adr/).
-
-## Modules
-
-Mantrachain includes several custom modules:
-
-- `x/xfeemarket`: Extends the fee market functionality to support multiple fee tokens.
-- `x/tokenfactory`: Allows for the creation and management of new tokens (based on Neutron's implementation).
-- `x/tax`: Handles tax-related operations within the chain.
-
-For detailed information on each module, please refer to their respective README files in the `x/` directory.
-
-## Security
-
-We take security seriously. If you discover a security issue, please bring it to our attention right away!
-
-Please refer to our [Security Policy](SECURITY.md) for more details on reporting vulnerabilities.
+- **Consensus:** CometBFT — unmodified, do not touch
+- **EVM execution:** `cosmos/evm` module, targeting 1–2s block finality
+- **Gas token:** 18-decimal denomination (hard requirement of `cosmos/evm`)
+- **Validator set:** Permissioned at genesis; progressive decentralization post-launch
 
 ## Contributing
 
-We welcome contributions to Mantrachain! Please check out our [Contributing Guide](CONTRIBUTING.md) for guidelines about how to proceed.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branch rules, CI pipeline details, the engineer track structure, and the handoff protocol for the 72-hour build sprint.
 
+## Security
 
-
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ---
 
-For more detailed information, please check the documentation in the respective directories and files within the repository.
+*Base fork: `MANTRA-Chain/mantrachain` @ `v1.0.1`*
