@@ -38,6 +38,12 @@ jobs:
         with:
           name: chain-binary
           path: build/
+      - name: Install libwasmvm
+        run: |
+          WASMVM_VERSION=$(grep "github.com/CosmWasm/wasmvm" go.mod | head -n 1 | awk '{print $2}')
+          echo "Installing libwasmvm ${WASMVM_VERSION}..."
+          sudo wget "https://github.com/CosmWasm/wasmvm/releases/download/${WASMVM_VERSION}/libwasmvm.x86_64.so" -O /lib/libwasmvm.x86_64.so
+          sudo chmod +x /lib/libwasmvm.x86_64.so
       - name: Make binary executable
         run: chmod +x build/mantrachaind
       - name: Validate genesis files
