@@ -33,6 +33,7 @@ services:
   # gentxs, and the final genesis file. All node containers depend on it.
   # -------------------------------------------------------------------
   init:
+    image: ${ARKD_IMAGE:-ghcr.io/worldstreet-web-services/arkd:ark-v1.0.1}
     build:
       context: ../../
       dockerfile: ops/docker/Dockerfile.node
@@ -52,6 +53,7 @@ services:
   # Sentry Node 0 — public relay tier (no signing key material)
   # -------------------------------------------------------------------
   sentry-0:
+    image: ${ARKD_IMAGE:-ghcr.io/worldstreet-web-services/arkd:ark-v1.0.1}
     build:
       context: ../../
       dockerfile: ops/docker/Dockerfile.node
@@ -86,6 +88,7 @@ services:
   # Validator 0 — signing node (NEVER publicly reachable)
   # -------------------------------------------------------------------
   validator-0:
+    image: ${ARKD_IMAGE:-ghcr.io/worldstreet-web-services/arkd:ark-v1.0.1}
     build:
       context: ../../
       dockerfile: ops/docker/Dockerfile.node
@@ -111,6 +114,7 @@ services:
   # Sentry Node 1 — public relay tier (no signing key material)
   # -------------------------------------------------------------------
   sentry-1:
+    image: ${ARKD_IMAGE:-ghcr.io/worldstreet-web-services/arkd:ark-v1.0.1}
     build:
       context: ../../
       dockerfile: ops/docker/Dockerfile.node
@@ -145,6 +149,7 @@ services:
   # Validator 1 — signing node (NEVER publicly reachable)
   # -------------------------------------------------------------------
   validator-1:
+    image: ${ARKD_IMAGE:-ghcr.io/worldstreet-web-services/arkd:ark-v1.0.1}
     build:
       context: ../../
       dockerfile: ops/docker/Dockerfile.node
