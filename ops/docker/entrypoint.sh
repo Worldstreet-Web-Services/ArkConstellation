@@ -106,6 +106,10 @@ if [ "$PROMETHEUS" = "true" ]; then
     sed -i 's|^geth-metrics-address = "127.0.0.1:8100"|geth-metrics-address = "0.0.0.0:8100"|' "${NODE_HOME}/config/app.toml" 2>/dev/null || true
 fi
 
+# Ensure gRPC is on 9095 to avoid port collision with CometBFT Prometheus on 9090
+sed -i 's|^address = "localhost:9090"|address = "0.0.0.0:9095"|' "${NODE_HOME}/config/app.toml" 2>/dev/null || true
+sed -i 's|^address = "0.0.0.0:9090"|address = "0.0.0.0:9095"|' "${NODE_HOME}/config/app.toml" 2>/dev/null || true
+
 # Enable Cosmos LCD/API server
 if [ "$ENABLE_API" = "true" ]; then
     sed -i '/^\[api\]$/,/^enable/{s/^enable = false/enable = true/}' "${NODE_HOME}/config/app.toml" 2>/dev/null || true

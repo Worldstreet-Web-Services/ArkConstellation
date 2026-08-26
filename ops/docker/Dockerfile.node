@@ -6,24 +6,40 @@
 # (validator vs. sentry) and topology are configured at runtime via
 # environment variables, not baked into the image. This follows the
 # industry-standard pattern: one image, configurable at deploy time.
-#
-# Build:
-#   docker build -f ops/docker/Dockerfile.node -t arkconstellation-node .
-#
-# Run (sentry):
-#   docker run -e NODE_ROLE=sentry -e SENTRY_INDEX=0 \
-#     -e PERSISTENT_PEERS="tcp://<validator_node_id>@validator:26656" \
-#     -p 26656:26656 -p 26657:26657 -p 9090:9090 \
-#     arkconstellation-node
-#
-# Run (validator):
-#   docker run -e NODE_ROLE=validator -e VALIDATOR_INDEX=0 \
-#     -e PERSISTENT_PEERS="tcp://<sentry_node_id>@sentry:26656" \
-#     arkconstellation-node
-#
-# See ops/runbooks/node-topology.md for the full sentry architecture diagram.
 
-FROM ghcr.io/worldstreet-web-services/arkd:ark-v1.0.0 AS arkbin
+ARG GO_VERSION="1.25"
+ARG IMG_TAG="3.19"
+
+# --------------------------------------------------------
+# Builder
+# --------------------------------------------------------
+FROM golang:${GO_VERSION}-alpine AS builder
+WORKDIR /src/app/
+RUN apk add --no-cache \
+    ca-certificates \
+    build-base \
+    linux-headers \
+    binutils-gold \
+    git \
+    wget
+
+# Copy go modules
+COPY go.mod go.sum ./
+
+# Download go dependencies
+RUN go mod download
+
+# Cosmwasm - Download correct libwasmvm version
+RUN ARCH=$(uname -m) && WASMVM_VERSION=$(go list -m github.com/CosmWasm/wasmvm/v3 | sed 's/.* //') && \
+    wget -q https://github.com/CosmWasm/wasmvm/releases/download/$WASMVM_VERSION/libwasmvm_muslc.$ARCH.a \
+    -O /lib/libwasmvm_muslc.$ARCH.a
+
+# Copy remaining source code
+COPY . .
+
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    LEDGER_ENABLED=false BUILD_TAGS='muslc osusergo pebbledb' LINK_STATICALLY=true make build
 
 # --------------------------------------------------------
 # Runtime
@@ -38,7 +54,7 @@ RUN apk add --no-cache \
     && addgroup -g 1025 nonroot \
     && adduser -D nonroot -u 1025 -G nonroot
 
-COPY --from=arkbin /bin/arkd /usr/local/bin/arkd
+COPY --from=builder /src/app/build/arkd /usr/local/bin/arkd
 RUN chmod +x /usr/local/bin/arkd \
     && ln -sf /usr/local/bin/arkd /usr/local/bin/mantrachaind
 
@@ -51,8 +67,8 @@ COPY ops/docker/setup-devnet.sh /setup-devnet.sh
 COPY networks/devnet/genesis-template.json /genesis-template.json
 RUN chmod +x /entrypoint.sh
 
-# P2P, RPC, Prometheus metrics
-EXPOSE 26656 26657 9090
+# P2P, RPC, Prometheus metrics, JSON-RPC, WebSocket, LCD
+EXPOSE 26656 26657 9090 8545 8546 1317
 
 USER nonroot
 WORKDIR /home/nonroot

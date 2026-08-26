@@ -71,6 +71,7 @@ services:
       - "1317:1317"     # Cosmos LCD/API
       - "9090:9090"     # Prometheus metrics
       - "8545:8545"     # EVM JSON-RPC
+      - "8546:8546"     # EVM WebSocket
       - "8100:8100"     # EVM geth metrics
     volumes:
       - sentry-0-data:/home/nonroot/.ark
@@ -128,7 +129,8 @@ services:
       - "26677:26657"   # RPC
       - "1318:1317"     # Cosmos LCD/API
       - "9091:9090"     # Prometheus metrics
-      - "8546:8545"     # EVM JSON-RPC
+      - "8555:8545"     # EVM JSON-RPC
+      - "8556:8546"     # EVM WebSocket
       - "8101:8100"     # EVM geth metrics
     volumes:
       - sentry-1-data:/home/nonroot/.ark
@@ -222,7 +224,7 @@ services:
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
       - arkdevnet
     depends_on:
