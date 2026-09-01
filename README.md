@@ -11,7 +11,7 @@ ArkConstellation is a permissioned, EVM-compatible Layer 1 chain targeting produ
 | Component | Version | Source |
 |-----------|---------|--------|
 | CometBFT | `v0.38.23` | Upstream, unmodified |
-| Cosmos SDK | `v0.53.6-v8-mantra-1` | MANTRA fork (diff required) |
+| Cosmos SDK | `v0.53.8-v8-mantra-1` | MANTRA fork (audited against upstream) |
 | `cosmos/evm` | `v0.6.2-v8-mantra-1` | MANTRA fork (diff required) |
 | IBC-go | `v10.5.1` | Upstream, unmodified |
 | Go toolchain | `1.25.0` | Per `go.mod` |

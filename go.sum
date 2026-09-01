@@ -700,10 +700,10 @@ github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c/go.mod h1:X0
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/MANTRA-Chain/connect/v2 v2.3.0-mantra-1.4 h1:ATp+qZDOpRFU8FiH+VKId3UZlmEwlyau0c2Z1eunIB4=
 github.com/MANTRA-Chain/connect/v2 v2.3.0-mantra-1.4/go.mod h1:tujhWIP46K4z5l5Swqxyurakq1+sq14RtHfkVHrZSPU=
-github.com/MANTRA-Chain/cosmos-sdk v0.53.6-v8-mantra-1 h1:BR6XgwRjgdOhPzVdqh1E4k+QQITIJP2QBkzyxkHwLUg=
-github.com/MANTRA-Chain/cosmos-sdk v0.53.6-v8-mantra-1/go.mod h1:5GLMySIqGT5NBxdkpjgRbD1n+gzcO9/TmtDo9b0J8xU=
-github.com/MANTRA-Chain/cosmos-sdk/api v0.0.0-20260402055312-eca3f45af560 h1:jIGUazddAlq06l1XBIPqHGUidADxZcL8/LxLGoEFnZU=
-github.com/MANTRA-Chain/cosmos-sdk/api v0.0.0-20260402055312-eca3f45af560/go.mod h1:VIH3FLXQ2KWCkzkqXSThA9npvg0LgSBxBRzVSRoJWeg=
+github.com/MANTRA-Chain/cosmos-sdk v0.53.8-v8-mantra-1 h1:+wVGA1usTZvYv4+P3qvR2ML8OkngQjy2bN3joIcGNyA=
+github.com/MANTRA-Chain/cosmos-sdk v0.53.8-v8-mantra-1/go.mod h1:BDV3ZWUAP4lD2TAsgJ5/J2u+5LOGulSKIcKzTNbm4yc=
+github.com/MANTRA-Chain/cosmos-sdk/api v0.0.0-20260729035606-58cc2eb4a66f h1:BBzMq+56/4Ak4FENTO086kAvMdmNVCtZKc80UXem8eA=
+github.com/MANTRA-Chain/cosmos-sdk/api v0.0.0-20260729035606-58cc2eb4a66f/go.mod h1:VIH3FLXQ2KWCkzkqXSThA9npvg0LgSBxBRzVSRoJWeg=
 github.com/MANTRA-Chain/evm v0.6.2-v8-mantra-1 h1:5WU6dT/zy7by5mcvyLCgzymgr9ITezQVlqQzWfTqpIw=
 github.com/MANTRA-Chain/evm v0.6.2-v8-mantra-1/go.mod h1:9GeaJM3zaqz3T7HJeQ1aHge/5npxsxlVu1GekDqMals=
 github.com/MANTRA-Chain/wasmd v0.0.0-20250724044732-5d3a4a2c160d h1:/GNezpHU/5vbaSG1cHR+13dUngQcF4hXZRIJSapBbxA=
