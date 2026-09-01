@@ -24,8 +24,25 @@ permissions:
   id-token: write           # (required for OIDC token used by attest-build-provenance)
 
 jobs:
+  verify-security-gate:
+    name: Verify Eng 3 Security & Chaos Sign-Off
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Git repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Eng 3 Release Gate Verification
+        run: |
+          python3 scripts/release/verify-eng3-signoff.py "${{ github.event.inputs.release_tag || github.ref_name }}"
+
   build:
     name: Build - ${{ matrix.platform.name }}
+    needs: [verify-security-gate]
     runs-on: ${{ matrix.platform.runner || 'chain-runner' }}
     strategy:
       matrix:
