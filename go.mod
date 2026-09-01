@@ -60,7 +60,7 @@ require (
 	github.com/CosmWasm/wasmd v0.61.1
 	github.com/CosmWasm/wasmvm/v3 v3.0.0
 	github.com/bufbuild/buf v1.46.0
-	github.com/cometbft/cometbft v0.38.23-0.20260422215035-4928b26fd5ba
+	github.com/cometbft/cometbft v0.38.23
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.53.6
@@ -71,7 +71,6 @@ require (
 	github.com/cosmos/ibc-go/v10 v10.5.1
 	github.com/cosmos/interchain-security/v7 v7.0.1
 	github.com/ethereum/go-ethereum v1.16.4
-	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.4
 	github.com/gorilla/mux v1.8.1
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
@@ -87,7 +86,6 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/yihuang/go-abi v0.1.1
-	golang.org/x/text v0.32.0
 	golang.org/x/tools v0.39.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217
 	google.golang.org/grpc v1.79.3
@@ -223,6 +221,7 @@ require (
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.2.5 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/snappy v0.0.5-0.20231225225746-43d5d4cd4e0e // indirect
@@ -392,6 +391,7 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/telemetry v0.0.0-20251111182119-bc8e575c7b54 // indirect
 	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/api v0.247.0 // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
