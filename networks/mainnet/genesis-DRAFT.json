@@ -1059,6 +1059,9 @@
       },
       "constitution": ""
     },
+    "govtimelock": {
+      "scheduled_proposals": []
+    },
     "ibc": {
       "client_genesis": {
         "clients": [],

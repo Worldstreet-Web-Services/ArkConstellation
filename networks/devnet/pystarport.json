@@ -138,6 +138,9 @@
             "expedited_min_deposit": [{ "denom": "esp", "amount": "5000000000000000000" }]
           }
         },
+        "govtimelock": {
+          "scheduled_proposals": []
+        },
         "crisis": {
           "constant_fee": { "denom": "esp", "amount": "8000000000000000" }
         }

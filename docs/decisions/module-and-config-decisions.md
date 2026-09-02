@@ -168,11 +168,13 @@ When a decision is made, update the Status column with ✅ Keep, ❌ Strip, or �
 
 ---
 
-### 14. Governance Timelock — 🔒 Required (duration TBD)
+### 14. Governance Timelock — 🔒 Implemented (48 hours)
 
-**Decision:** Mandatory timelock on all governance execution. Minimum recommended: 48 hours for the launch period, with a view to extending post-launch.
+**Decision:** Mandatory 48-hour timelock on all governance execution, including expedited proposals, for the launch period, with a view to extending post-launch.
 
 **Rationale:** Even a passed governance proposal should not execute instantly. The timelock gives users time to exit positions if they disagree with the outcome of a vote.
+
+**Implementation:** The Ark-local [`x/govtimelock`](../../x/govtimelock/README.md) module wraps the stock `x/gov` end blocker. Passing a tally schedules execution for `block_time + 48h`; execution cannot occur before that timestamp and remains atomic when it becomes due. The schedule is included in genesis export/import, and scheduling and completion emit explicit events for indexers.
 
 ---
 
@@ -239,4 +241,3 @@ When a decision is made, update the Status column with ✅ Keep, ❌ Strip, or �
 | **Total** | **1,000,000,000** | **100%** | | |
 
 > **Lesson from OM crash:** Avoid concentrated allocations. Publish the full vesting schedule before mainnet genesis — not after.
-

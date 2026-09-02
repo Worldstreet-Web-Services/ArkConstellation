@@ -202,16 +202,16 @@ for this value instead of re-declaring a second, driftable copy inline.
   replicated storage — losing it and restarting is exactly the failure
   mode that causes double-signing.
 
+## Resolved decision gaps
+
+- **Governance timelock (decision #14).** The Ark-local `x/govtimelock`
+  module wraps the stock `x/gov` end blocker and defers every passed proposal
+  for 48 hours, including expedited proposals. Due proposal messages execute
+  atomically, and the pending schedule survives genesis export/import. Boundary
+  and rollback behavior are covered by app tests.
+
 ## Still open per docs/decisions/module-and-config-decisions.md — genuine gaps, not faked
 
-- **Governance timelock (decision #14, locked, minimum 48h) is not
-  implemented anywhere in this codebase.** Stock cosmos-sdk `x/gov` has no
-  timelock field, hook, or config knob — a passed proposal executes
-  immediately in the same block its voting period ends. Implementing this
-  needs either a custom module wrapping `MsgExecLegacyContent`/proposal
-  execution, or a fork-level change to `x/gov`'s keeper. Not started. Do
-  not assume any genesis parameter in this track's files provides this —
-  none does, because none can.
 - **`gov.min_deposit`/`expedited_min_deposit` in
   `networks/mainnet/genesis-params.json` are explicit placeholders**, not
   reviewed values — decision #15 blocks the real figure on a total supply
@@ -321,4 +321,4 @@ Re-ran the Elisha handoff pipeline from a clean working state to confirm the gen
 - `./scripts/genesis/hash-genesis.sh /tmp/rehearsal-genesis-2026-08-23.json` reproduces the same canonical SHA-256 as before: `d0e283f6595fb07cb6fd973f68762f78b783d2ad7a63e074782ea5ee96316d61`.
 - Binary used for the re-run reports version `track-2-consensus-genesis-7e2a522b` (the `ark-v0.1.0-alpha` / post-`track/1-state-machine` build); it does not include the Makefile-only `track/2-add-devnet-info` commits, which is correct for genesis validation because those changes do not affect state-machine output.
 
-No new blockers surfaced. Elisha Day 3 remains blocked on the same external inputs: real validator `gentx` files, total token supply, governance deposit minima, admin/upgrade multisig, and governance timelock sign-off.
+No new blockers surfaced. Elisha Day 3 remains blocked on the same external inputs: real validator `gentx` files, total token supply, governance deposit minima, and admin/upgrade multisig.
