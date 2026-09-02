@@ -60,5 +60,15 @@ Single local node booted from HEAD:
 ### `skip-mev/feemarket` Dynamic Fee Configuration
 - **Decision**: Keep defaults (`base_fee_change_denominator: 8`, `elasticity_multiplier: 2`, `min_gas_price: 0`, `base_fee: 10^9` atto-units ≈ 1 gwei) for Paymaster/gasless transaction compatibility.
 
+### Gas Sponsorship (Paymaster) Infrastructure
+- **Status**: Implemented on branch `account-abstraction`
+- **Implementation**: ERC-4337 Paymaster pattern with minimal EntryPoint (6628 bytes) to fit within EIP-170 limits
+- **Deployed Contracts (Devnet)**:
+  - EntryPoint: `0xD6F4B34b519838DA78C03005ccdafFE94F58077E`
+  - SimplePaymaster: `0x6493ff1902c0cF198f279726d387c783b83bDe05`
+- **Components**: MinimalEntryPoint, SimplePaymaster, Node.js relayer service
+- **Documentation**: Decision recorded in `docs/decisions/module-and-config-decisions.md` #18
+- **Note**: Standard ERC-4337 EntryPoint too large (29425 bytes > 24576 limit); custom minimal implementation used for MVP
+
 ### Eng 3 Dependency & Next Tags
 - Blocked on Eng 3 (Security/Chaos) reporting before tagging `ark-v1.0.0-rc1`.
