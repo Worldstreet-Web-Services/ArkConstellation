@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Raises arkdevnet_9000-1's unbonding period from 300s to 21 days so IBC",
+    "light clients can hold a viable trusting period (~14 days).",
+    "",
+    "DECIDED 2026-09-03: make the devnet mainnet-shaped rather than stand up a",
+    "second network. This trades away the ability to exercise unbonding,",
+    "redelegation and slashing-during-unbonding inside a working session — the",
+    "documented reason the 300s value existed. If those scenarios need",
+    "rehearsing again, use a throwaway chain rather than reverting this.",
+    "",
+    "NOTE: the unbonding period governs converting BONDED stake back to liquid.",
+    "It does not affect sending liquid balances, paying gas, or withdrawing",
+    "validator rewards and commission — all of which stay instant.",
+    "",
+    "MsgUpdateParams replaces the params struct wholesale — every field must be",
+    "present, not just the one being changed. Values below are the live devnet",
+    "params with unbonding_time changed and nothing else.",
+    "",
+    "Submit:  arkd tx gov submit-proposal staking-unbonding-21d.json \\",
+    "           --from <key> --chain-id arkdevnet_9000-1",
+    "Verify:  arkd query staking params"
+  ],
+  "messages": [
+    {
+      "@type": "/cosmos.staking.v1beta1.MsgUpdateParams",
+      "authority": "ark10d07y265gmmuvt4z0w9aw880jnsr700j2cu5hn",
+      "params": {
+        "unbonding_time": "1814400s",
+        "max_validators": 10,
+        "max_entries": 7,
+        "historical_entries": 10000,
+        "bond_denom": "esp",
+        "min_commission_rate": "0.000000000000000000"
+      }
+    }
+  ],
+  "metadata": "ipfs://CID",
+  "deposit": "1000000000000000000esp",
+  "title": "Raise staking unbonding period to 21 days for IBC interoperability",
+  "summary": "Raises unbonding_time from 300s to 1814400s (21 days), matching the mainnet-locked figure from decision #10, so IBC light clients on counterparty chains can be created with a viable trusting period. Trades away the devnet's fast unbonding/slashing test cycle."
+}
