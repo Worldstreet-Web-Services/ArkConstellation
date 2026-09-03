@@ -1,0 +1,106 @@
+# ArkConstellation devnet — public endpoints.
+#
+# Fixes rpc./lcd. (currently returning nothing), adds grpc. (never configured,
+# and the blocker for the Hermes IBC relayer), and pins timeouts on explorer.
+# so a slow Blockscout render fails fast instead of hanging the handshake.
+#
+# Replace UPSTREAM with wherever these actually run — the compose service name
+# if Caddy shares the network (e.g. sentry-0), otherwise 127.0.0.1.
+{
+	# Uncomment while debugging; Caddy logs TLS issuance failures here and those
+	# are the usual cause of a hostname that works intermittently.
+	# debug
+}
+
+(cors) {
+	@options method OPTIONS
+	respond @options 204
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type, Authorization"
+	}
+}
+
+# --- CometBFT RPC ------------------------------------------------------------
+# Needs websocket passthrough: Hermes subscribes to /websocket for events, and
+# a plain reverse_proxy without the Connection/Upgrade headers preserved will
+# 400 on the handshake.
+rpc.34.60.137.196.sslip.io {
+	import cors
+	reverse_proxy UPSTREAM:26657 {
+		header_up Host {upstream_hostport}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# --- Cosmos REST / LCD -------------------------------------------------------
+lcd.34.60.137.196.sslip.io {
+	import cors
+	reverse_proxy UPSTREAM:1317
+}
+
+# --- Cosmos gRPC -------------------------------------------------------------
+# THE HERMES BLOCKER. Two things are required and the second is the one that
+# gets missed:
+#
+#   1. gRPC must be ENABLED on the node. In app.toml:
+#        [grpc]
+#        enable = true
+#        address = "0.0.0.0:9090"
+#      No Caddy route helps if the server isn't listening.
+#
+#   2. The upstream must be reached over h2c — gRPC is HTTP/2, and Caddy will
+#      otherwise downgrade to HTTP/1.1 and every call fails with a protocol
+#      error that reads like a network fault.
+#
+# PORT CONFLICT: the devnet compose maps 9090 to Prometheus for the sentries.
+# Either move Prometheus, or bind the node's gRPC to another port (9190) and
+# change it here to match. Do not leave both claiming 9090.
+grpc.34.60.137.196.sslip.io {
+	reverse_proxy UPSTREAM:9090 {
+		transport http {
+			versions h2c 2
+		}
+	}
+}
+
+# --- EVM JSON-RPC ------------------------------------------------------------
+evm.34.60.137.196.sslip.io {
+	import cors
+	reverse_proxy UPSTREAM:8545
+}
+
+evm-ws.34.60.137.196.sslip.io {
+	reverse_proxy UPSTREAM:8546
+}
+
+# --- Blockscout --------------------------------------------------------------
+# Intermittent failures here are usually the frontend being slow rather than
+# down — it was observed at ~56% CPU. Without explicit timeouts Caddy holds the
+# connection until the client gives up, which looks like a dead host. These make
+# it fail fast and visibly instead.
+explorer.34.60.137.196.sslip.io {
+	reverse_proxy BLOCKSCOUT_FRONTEND:3000 {
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 30s
+		}
+	}
+}
+
+explorer-api.34.60.137.196.sslip.io {
+	import cors
+	reverse_proxy BLOCKSCOUT_BACKEND:4000 {
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 30s
+		}
+	}
+}
+
+# --- Faucet ------------------------------------------------------------------
+faucet.34.60.137.196.sslip.io {
+	import cors
+	reverse_proxy FAUCET:8088
+}
