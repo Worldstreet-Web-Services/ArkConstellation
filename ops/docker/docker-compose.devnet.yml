@@ -20,8 +20,8 @@
 #      docker compose -f ops/docker/docker-compose.devnet.yml down -v
 #
 # Ports (sentries are the only publicly reachable nodes):
-#   sentry-0:  P2P=26656  RPC=26657  LCD=1317  Prometheus=9090
-#   sentry-1:  P2P=26676  RPC=26677  LCD=1318  Prometheus=9091
+#   sentry-0:  P2P=26656  RPC=26657  LCD=1317  Prometheus=9090  gRPC=9095
+#   sentry-1:  P2P=26676  RPC=26677  LCD=1318  Prometheus=9091  gRPC=9096
 #   (validators have NO public ports)
 #   Grafana:    3000
 #   Prometheus: 9092
@@ -71,7 +71,8 @@ services:
       - "26656:26656"   # P2P
       - "26657:26657"   # RPC
       - "1317:1317"     # Cosmos LCD/API
-      - "9090:9090"     # Prometheus metrics
+      - "9090:9090"     # Prometheus metrics (CometBFT)
+      - "9095:9095"     # Cosmos gRPC — required by IBC relayers (Hermes)
       - "8545:8545"     # EVM JSON-RPC
       - "8546:8546"     # EVM WebSocket
       - "8100:8100"     # EVM geth metrics
@@ -132,7 +133,8 @@ services:
       - "26676:26656"   # P2P
       - "26677:26657"   # RPC
       - "1318:1317"     # Cosmos LCD/API
-      - "9091:9090"     # Prometheus metrics
+      - "9091:9090"     # Prometheus metrics (CometBFT)
+      - "9096:9095"     # Cosmos gRPC
       - "8555:8545"     # EVM JSON-RPC
       - "8556:8546"     # EVM WebSocket
       - "8101:8100"     # EVM geth metrics

@@ -20,11 +20,36 @@ The chain itself was healthy throughout (block 197,467, and the direct-IP ports
 Blockscout kept working because it has its own database and indexes through the
 **EVM** JSON-RPC, which was up. It never touches the Cosmos RPC or LCD.
 
+## The gRPC port — no conflict to resolve
+
+An earlier draft of this change claimed 9090 was contested and proposed moving
+Prometheus. That was wrong, and worth recording so nobody repeats it.
+
+`entrypoint.sh` **already** relocates the node's gRPC server:
+
+```sh
+# Ensure gRPC is on 9095 to avoid port collision with CometBFT Prometheus on 9090
+sed -i 's|^address = "0.0.0.0:9090"|address = "0.0.0.0:9095"|' app.toml
+```
+
+So gRPC listens on 9095 inside the container and 9090 belongs to CometBFT's
+Prometheus endpoint, which `ops/monitoring/prometheus.yml` scrapes by name as
+`sentry-0:9090`. Moving Prometheus would have broken monitoring to fix nothing.
+
+The actual gap was that **9095 was never published to the host**. That is fixed in
+`docker-compose.devnet.yml` in this same change: `9095:9095` on sentry-0 and
+`9096:9095` on sentry-1.
+
 ## Applying
 
-Replace the `UPSTREAM` / `BLOCKSCOUT_*` / `FAUCET` placeholders, then:
+Upstreams are `127.0.0.1:<published port>`, on the assumption that **Caddy runs on
+the host** rather than inside the `arkdevnet` compose network — no Caddy service
+exists in this repo's compose files. If it is in fact containerised and shares
+that network, swap the addresses for service names (`sentry-0:9095`, and so on);
+Docker DNS will not resolve those from outside the network.
 
 ```bash
+docker compose -f ops/docker/docker-compose.devnet.yml up -d sentry-0 sentry-1
 caddy validate --config Caddyfile
 caddy reload  --config Caddyfile     # zero-downtime
 ```
