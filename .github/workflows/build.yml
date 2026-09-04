@@ -61,15 +61,36 @@ jobs:
             "https://github.com/CosmWasm/wasmvm/releases/download/${WASMVM_VERSION}/libwasmvm.x86_64.so"
           sudo ldconfig
       - name: Validate genesis files
+        # This step looked only for networks/*/genesis.json, which has never
+        # existed in this repo, so it printed "skipping" and passed without
+        # inspecting anything. Validate the complete genesis files that are
+        # actually here, and fail rather than skip if the list is ever empty
+        # again. networks/devnet/genesis-template.json is deliberately absent:
+        # it is a JSON-merge-patch overlay, not a genesis file (see its
+        # _comment), and is covered by the genesis-sync job instead.
         run: |
-          found=0
-          for dir in networks/*/; do
-            if [ -f "$dir/genesis.json" ]; then
-              echo "Validating $dir/genesis.json..."
-              ./build/arkd genesis validate-genesis "$dir/genesis.json"
-              found=1
+          files=""
+          for f in networks/*/genesis.json networks/mainnet/genesis-DRAFT.json; do
+            if [ -f "$f" ]; then
+              files="$files $f"
             fi
           done
-          if [ "$found" -eq 0 ]; then
-            echo "No genesis.json files found yet — skipping validation."
+          if [ -z "$files" ]; then
+            echo "::error::no complete genesis file matched - this check must never pass vacuously" >&2
+            exit 1
           fi
+          for f in $files; do
+            echo "Validating $f ..."
+            ./build/arkd genesis validate-genesis "$f"
+          done
+
+  genesis-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Devnet genesis patch drift check
+        # genesis-template.json and pystarport.json carry the same merge patch
+        # in two places, and nothing but this script stops them from applying
+        # different parameters than the ones a human reviewed. `make devnet-init`
+        # depends on it locally; until now nothing ran it on a pull request.
+        run: python3 networks/devnet/check-genesis-sync.py
