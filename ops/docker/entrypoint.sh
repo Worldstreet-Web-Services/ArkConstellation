@@ -6,7 +6,8 @@
 #   CHAIN_ID           Cosmos chain ID (default: "arkdevnet_9000-1")
 #   VALIDATOR_INDEX    Node index for validators (0, 1, 2, ...)
 #   SENTRY_INDEX       Node index for sentries (0, 1, 2, ...)
-#   MIN_GAS_PRICES     Minimum gas prices (default: "0.01esp")
+#   MIN_GAS_PRICES     Minimum gas prices (default: "1000000000esp" = 1 gwei,
+#                      matching the chain-wide feemarket floor)
 #   PROMETHEUS         Enable Prometheus metrics (default: "true")
 #   ENABLE_API         Enable Cosmos LCD/API (default: "false")
 #   ENABLE_EVM_RPC     Enable EVM JSON-RPC (default: "false")

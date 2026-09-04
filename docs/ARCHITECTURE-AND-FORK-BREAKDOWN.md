@@ -656,7 +656,17 @@ cover 24h. Test it on devnet with a real key ceremony before you need it.
 
 ### B. Do before public testnet
 
-**B1 — `minimum-gas-prices` is effectively zero and looks like it is not.**
+**B1 — `minimum-gas-prices` is effectively zero and looks like it is not.** ✅
+**RESOLVED 2026-09-04.** `MIN_GAS_PRICES` is now `1000000000esp` (1 gwei) in
+`entrypoint.sh`'s default, all four compose services, and `pystarport.json` — the
+recommendation below, taken as written. A second consequence surfaced while fixing
+it: the node *advertises* its local value over `/cosmos/base/node/v1beta1/config`,
+which clients auto-fill fees from, so `0.01esp` did not merely under-defend the
+mempool — it actively handed tooling a fee that consensus rejects. The remaining
+half of the recommendation, an alert on `feemarket` `NoBaseFee`, is still open.
+
+The original finding, for context:
+
 `ops/docker/entrypoint.sh` and every service in `docker-compose.devnet.yml` set
 `MIN_GAS_PRICES: "0.01esp"`. Since `esp` is the **wei-equivalent base unit**, 0.01 esp
 per gas means a 21,000-gas transfer costs 210 esp = 2.1 × 10⁻¹⁶ KASH. That is free.

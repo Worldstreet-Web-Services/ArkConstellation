@@ -37,9 +37,12 @@ faucet.34.60.137.196.sslip.io {
 #
 # The node already serves gRPC: entrypoint.sh moves it to 0.0.0.0:9095 to leave
 # 9090 to CometBFT's Prometheus endpoint, and `netstat` inside ark-sentry-0
-# confirms :::9095 LISTEN. What is missing is that 9095 is not published to the
-# host — see the port addition in ops/docker/docker-compose.devnet.yml. Until
-# sentry-0 is recreated with that mapping, this route has nothing to reach.
+# confirms :::9095 LISTEN. It is published to the host as 127.0.0.1:9095:9095 —
+# loopback only, since Caddy runs here and nothing external should reach it
+# directly. See ops/docker/docker-compose.devnet.yml.
+#
+# Only sentry-0 publishes gRPC. Sentry-1's was dropped as unused; if this route
+# ever needs a failover upstream, publish it there and add it here deliberately.
 #
 # h2c is required. gRPC is HTTP/2; without this Caddy speaks HTTP/1.1 to the
 # upstream and every call fails with a protocol error that reads like a network
