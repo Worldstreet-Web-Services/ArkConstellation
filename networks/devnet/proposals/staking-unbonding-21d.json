@@ -19,7 +19,15 @@
     "",
     "Submit:  arkd tx gov submit-proposal \\",
     "           networks/devnet/proposals/staking-unbonding-21d.json \\",
-    "           --from <key> --chain-id arkdevnet_9000-1",
+    "           --from <key> --chain-id arkdevnet_9000-1 \\",
+    "           --gas auto --gas-adjustment 1.5 --gas-prices 1000000000esp",
+    "",
+    "The gas price is not optional and not the value the node advertises.",
+    "cosmos/evm enforces a chain-wide minimum of 1 gwei per gas unit via",
+    "feemarket min_gas_price, while the node reports 0.01esp over",
+    "/cosmos/base/node/v1beta1/config. Submitting at the advertised value",
+    "fails with a long ante stack trace ending \"provided fee < minimum",
+    "global fee\". Submitted as proposal #3 on 2026-09-04 with the above.",
     "Verify:  arkd query staking params"
   ],
   "messages": [

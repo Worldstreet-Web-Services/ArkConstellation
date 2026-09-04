@@ -2,7 +2,7 @@
 
 **Status:** 🟢 DECIDED 2026-09-03, **APPLIED 2026-09-04**. Genesis sources carry `1814400s`, so a devnet built from scratch is mainnet-shaped from block zero. The running `arkdevnet_9000-1` was migrated by governance proposal **#3** (passed 180,000,000 KASH yes / 0 no; `unbonding_time` now `1814400s`, every other staking param unchanged). Any *other* pre-existing devnet still runs `300s` — confirm with `arkd query staking params` rather than assuming.
 
-**Author:** Drafted 2026-09-03; restructured 2026-09-04 to record the decision rather than the proposal.
+**Author:** Engineering. Drafted 2026-09-03; restructured 2026-09-04 to record the decision rather than the proposal.
 
 **Scope:** One question — **which chain we open IBC channels against**, given that `arkdevnet_9000-1` was configured with a 300s unbonding period. It does **not** change mainnet's locked 21-day figure (decision #10), which is correct as it stands. It does **not** cover relayer operations. The gRPC gap it originally listed as blocking was resolved on 2026-09-04 and is no longer open.
 
@@ -103,6 +103,11 @@ Verify with `arkd query staking params` rather than assuming either path was tak
 **Resolved since drafting:** the gRPC gap. Hermes and the Go relayer both require gRPC,
 and the devnet exposed only RPC and LCD. The node was already serving gRPC on 9095 —
 `entrypoint.sh` moves it there to leave 9090 to CometBFT's Prometheus endpoint — but the
-port was never published and there was no Caddy route. Both were fixed on 2026-09-04;
-`grpc.34.60.137.196.sslip.io` now answers. This proposal is therefore the last remaining
-blocker to opening a channel.
+port was never published and there was no Caddy route. Both were fixed on 2026-09-04 and
+`grpc.34.60.137.196.sslip.io` now answers.
+
+That infra change is **not in this PR's diff** — it landed in `ops/` via #30, and is
+stated here only as context for why this proposal no longer lists gRPC as blocking.
+Review it there, not from these five files.
+
+With both this and gRPC applied, **nothing further blocks opening a channel.**
