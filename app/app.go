@@ -55,6 +55,9 @@ import (
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_4"
 	"github.com/MANTRA-Chain/mantrachain/v8/client/docs"
+	govtimelock "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
+	govtimelockkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
+	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 	sanctionkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/sanction/keeper"
 	sanction "github.com/MANTRA-Chain/mantrachain/v8/x/sanction/module"
 	sanctiontypes "github.com/MANTRA-Chain/mantrachain/v8/x/sanction/types"
@@ -274,6 +277,7 @@ type App struct {
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 	CircuitKeeper         circuitkeeper.Keeper // emergency pause: cosmossdk.io/x/circuit, wired via SetCircuitBreaker below
 	SanctionKeeper        sanctionkeeper.Keeper
+	GovTimelockKeeper     govtimelockkeeper.Keeper
 
 	// IBC
 	IBCKeeper           *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
@@ -544,6 +548,9 @@ func New(
 		app.MsgServiceRouter(),
 		govConfig,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+	app.GovTimelockKeeper = govtimelockkeeper.NewKeeper(
+		runtime.NewKVStoreService(keys[govtypes.StoreKey]),
 	)
 
 	app.ProviderKeeper.SetGovKeeper(app.GovKeeper)
@@ -847,7 +854,12 @@ func New(
 		vesting.NewAppModule(app.AccountKeeper, app.BankKeeper),
 		bank.NewAppModule(appCodec, *app.BankKeeper, app.AccountKeeper, nil),
 		feegrantmodule.NewAppModule(appCodec, app.AccountKeeper, app.BankKeeper, app.FeeGrantKeeper, app.interfaceRegistry),
-		gov.NewAppModule(appCodec, &app.GovKeeper, app.AccountKeeper, app.BankKeeper, nil),
+		govtimelock.NewGovAppModule(
+			gov.NewAppModule(appCodec, &app.GovKeeper, app.AccountKeeper, app.BankKeeper, nil),
+			&app.GovKeeper,
+			app.GovTimelockKeeper,
+		),
+		govtimelock.NewAppModule(app.GovTimelockKeeper),
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, nil),
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, nil, app.interfaceRegistry),
 		distr.NewAppModule(appCodec, app.DistrKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, nil),
@@ -971,6 +983,7 @@ func New(
 		stakingtypes.ModuleName,
 		slashingtypes.ModuleName,
 		govtypes.ModuleName,
+		govtimelocktypes.ModuleName,
 		minttypes.ModuleName,
 		evidencetypes.ModuleName,
 		authz.ModuleName,
