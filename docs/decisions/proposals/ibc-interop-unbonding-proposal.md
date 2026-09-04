@@ -33,7 +33,7 @@ separate chain rather than reverting this.
 
 An IBC light client's **trusting period must be shorter than the counterparty's unbonding period** — conventionally two-thirds of it. That is not a relayer setting we can tune around; it is what makes the light client's security argument work. A validator set that has fully unbonded can no longer be slashed, so a client must never accept headers signed by one.
 
-With the devnet's current parameters:
+With the parameters as they stood before this change:
 
 | | Value | Resulting trusting period |
 |---|---|---|
