@@ -49,22 +49,38 @@ tcp   0  0 :::9095   :::*  LISTEN
 network can reach it. Publishing it is the fix, added in
 `ops/docker/docker-compose.devnet.yml`.
 
-## Applying
+## Applied 2026-09-04
 
-The host runs from a checkout at `/home/Evangel/ArkConstellation`, so once this
-merges:
+Already live on `ark-devnet`. This PR brings the repo into line with the host.
+
+**The host is not a git checkout.** `/home/Evangel/ArkConstellation` was extracted
+from `ark-ops.tar.gz`, so there is no `git pull` path — an earlier draft of this
+file said there was, wrongly. Changes have to be copied to the host, and the repo
+is documentation of the host rather than its source. Worth fixing separately: a
+deployment nobody can `git pull` is a deployment whose drift nobody can see.
+
+What was run, with backups taken first
+(`/etc/caddy/Caddyfile.bak-20260904`, `docker-compose.devnet.yml.bak-20260904`):
 
 ```bash
-# on ark-devnet
-cd ~/ArkConstellation && git pull
-docker compose -f ops/docker/docker-compose.devnet.yml up -d sentry-0   # recreates with 9095
-sudo cp ops/caddy/Caddyfile /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy                                            # zero-downtime
+# 9095/9096 added to the sentry port blocks, then
+docker compose -f ops/docker/docker-compose.devnet.yml up -d sentry-0 sentry-1
+# grpc. block appended to /etc/caddy/Caddyfile, then
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
-Recreating `sentry-0` briefly interrupts the public RPC, LCD and EVM endpoints.
-The validators are separate containers and keep producing blocks throughout.
+Measured through the restart:
+
+| | |
+|---|---|
+| Chain height before → after | 205028 → 205033, never paused |
+| Validators | `Up 7 days` — separate containers, never restarted |
+| `grpc.` after | **HTTP 415 over HTTP/2** — a real gRPC server answering |
+| `rpc.` / `lcd.` / `evm.` / `explorer.` / `faucet.` | 200 / 501 / 405 / 200 / 200, unchanged |
+
+The sentry recreate did interrupt the public RPC, LCD and EVM endpoints for a few
+seconds. Consensus was unaffected, exactly as expected: the validators are
+separate containers with no published ports, and blocks kept being produced.
 
 ## Verifying
 
