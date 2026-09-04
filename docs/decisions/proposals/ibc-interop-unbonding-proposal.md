@@ -109,8 +109,8 @@ port was never published and there was no Caddy route. Both were fixed on 2026-0
 That infra change is **not in this PR's diff**, and two things about it are separate:
 it is **applied and live on the host**, verified by a real gRPC call returning
 `grpc-status: 0` through Caddy — but it is **not yet in this repo**. The `ops/` change
-describing it is **in flight as #30**, not merged. If this PR lands first, that is a
-decision record citing a route the tree does not yet contain. Review the route there,
-not from these files.
+describing it is **#30**. Until that merges, this record cites a Caddy route the tree
+does not contain — check #30's status rather than inferring it from this sentence.
+Review the route there, not from these files.
 
 With both this and gRPC applied, **nothing further blocks opening a channel.**
