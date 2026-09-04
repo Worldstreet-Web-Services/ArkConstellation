@@ -1,6 +1,6 @@
 # DECISION: Raise the devnet's unbonding period to 21 days for IBC interop
 
-**Status:** 🟢 DECIDED 2026-09-03. Genesis sources now carry `1814400s`, so a devnet built from scratch is mainnet-shaped from block zero. **A devnet started before that date still runs `300s`** and only moves by governance — submit `networks/devnet/proposals/staking-unbonding-21d.json`, then confirm with `arkd query staking params`. Do not assume either path was taken.
+**Status:** 🟢 DECIDED 2026-09-03, **APPLIED 2026-09-04**. Genesis sources carry `1814400s`, so a devnet built from scratch is mainnet-shaped from block zero. The running `arkdevnet_9000-1` was migrated by governance proposal **#3** (passed 180,000,000 KASH yes / 0 no; `unbonding_time` now `1814400s`, every other staking param unchanged). Any *other* pre-existing devnet still runs `300s` — confirm with `arkd query staking params` rather than assuming.
 
 **Author:** Drafted 2026-09-03; restructured 2026-09-04 to record the decision rather than the proposal.
 
@@ -76,10 +76,20 @@ The change lands in two places, and both are needed:
 
 - **Genesis** — `networks/devnet/genesis-template.json` and `pystarport.json` now carry
   `1814400s`, so any devnet built from scratch is mainnet-shaped from block zero.
-- **The running chain** — a devnet started before 2026-09-03 is still on `300s` and only
-  moves by governance. Submit `networks/devnet/proposals/staking-unbonding-21d.json`.
-  With a 120s voting period and a 1 KASH deposit it lands in about four minutes, and
-  both validators are operated by the same party, so no external coordination is needed.
+- **The running chain** — moves only by governance. Submit
+  `networks/devnet/proposals/staking-unbonding-21d.json`. With a 120s voting period and
+  a 1 KASH deposit it lands in about four minutes, and both validators are operated by
+  the same party, so no external coordination is needed. Done for
+  `arkdevnet_9000-1` on 2026-09-04 as proposal #3.
+
+  Two things that trip up the submission, neither documented elsewhere:
+
+  - **Fees.** The compose sets `MIN_GAS_PRICES: "0.01esp"`, but `cosmos/evm`'s
+    `MinGasPriceDecorator` enforces a *global* minimum of 1 gwei per gas unit. Use
+    `--gas-prices 1000000000esp`; `0.01esp` is rejected with a stack trace ending
+    `provided fee < minimum global fee`.
+  - **The node image's entrypoint requires `NODE_ROLE`**, so a one-off `arkd`
+    invocation needs `--entrypoint arkd` to bypass it.
 
 Verify with `arkd query staking params` rather than assuming either path was taken.
 
