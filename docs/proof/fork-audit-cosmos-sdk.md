@@ -1,7 +1,7 @@
 # MANTRA Cosmos SDK Fork Audit vs Upstream v0.53.x
 
 ## Methodology
-- Confirmed the pin via ArkConstellation's `go.mod`: `github.com/cosmos/cosmos-sdk => github.com/MANTRA-Chain/cosmos-sdk v0.53.6-v8-mantra-1`, commit `eca3f45af56019d6e184b795b8216c447040f84c`, branch `mantra/v0.53.6`.
+- The original audit confirmed ArkConstellation's then-current pin as `github.com/cosmos/cosmos-sdk => github.com/MANTRA-Chain/cosmos-sdk v0.53.6-v8-mantra-1`, commit `eca3f45af56019d6e184b795b8216c447040f84c`, branch `mantra/v0.53.6`. See the remediation record below for the current pin.
 - Shallow-cloned `MANTRA-Chain/cosmos-sdk` at tag `v0.53.6-v8-mantra-1` and `cosmos/cosmos-sdk` at tag `v0.53.6` (upstream has an **exact** matching tag, so this is a precise diff, not an approximation).
 - Ran a real recursive `diff -rq` across both trees, then full unified diffs on every differing file.
 - Separately diffed upstream `v0.53.6..v0.53.8` (latest released v0.53.x) and `v0.53.8..origin/release/v0.53.x` (unreleased tip) to answer the drift/security question.
@@ -30,7 +30,7 @@ No changes were found in staking, slashing, distribution, gov, evidence, upgrade
 - **`x/mint` `MaxSupply` param** (`x/mint/types/params.go`, `mint.go`, `mint.proto`, `mint.pb.go`, `module.go`): adds a 7th proto field and caps `BeginBlocker` minting once total supply would exceed `MaxSupply` (0 = infinite, so default-safe). This is a genuine **consensus-rule and wire-format change** to a stock module — a different chain built on this fork inherits a non-standard `x/mint` proto/state layout that diverges from vanilla cosmos-sdk. Any tooling/explorer that assumes the canonical 6-field mint params, or genesis-migration scripts written against stock SDK, needs to account for this field. ArkConstellation must decide whether it wants this feature and must ensure its own module manager correctly wires `RegisterMigration(..., 2, m.Migrate2to3)` if upgrading from an older mint state.
 - **`x/bank` BeforeSend hooks architecture** (`x/bank/keeper/send.go`, `keeper.go`, `types/hooks.go`): inserts `BlockBeforeSend`/`TrackBeforeSend` calls into the hot path of `SendCoins`, `DelegateCoins`, `UndelegateCoins`, `InputOutputCoins`. Enforcement is **asymmetric by design**: `SendCoinsFromModuleToModule` explicitly bypasses `BlockBeforeSend` via a new `SendCoinsWithoutBlockHook`, while account↔module and account↔account paths always enforce it (confirmed against the new `TestHooks` test in `x/bank/app_test.go`). This is exactly the plumbing needed for a KYC/AML-style transfer blocklist (consistent with MANTRA's "regulatory chain" positioning) — inert today, but it's new attack surface/extension point in the money-movement code that a different chain's own modules could hook into, intentionally or by mistake. Worth an explicit check that ArkConstellation's own `app.go`/module wiring never calls `SetHooks` unless intended.
 - **`x/auth/tx/query.go` `formatTxResults`**: upstream returns an error and aborts the whole query if *any* indexed tx fails to decode. The fork instead **silently drops** the undecodable tx from the result slice and returns the rest with no error. This is a real API-behavior change to `GetTxsEvent`/tx-search RPC — result-set length no longer 1:1 with matched txs, and decode failures (which could indicate indexing corruption) are now swallowed rather than surfaced. Not consensus-breaking (query-path only) but worth a deliberate decision, not an accident.
-- **Two-module lockstep risk**: the fork's `go.mod` adds `replace cosmossdk.io/api => ./api` (only takes effect when cosmos-sdk itself is the main module). ArkConstellation's own `go.mod` correctly carries an independent pin (`cosmossdk.io/api => github.com/MANTRA-Chain/cosmos-sdk/api v0.0.0-...-eca3f45af560`) matching the same commit — this is *currently* consistent, but any future re-pin of the SDK fork commit must be paired with re-pinning the `cosmossdk.io/api` pseudo-version, or generated pulsar code (mint, auth module config) can silently drift out of sync with the SDK proto.
+- **Two-module lockstep risk**: the fork's `go.mod` adds `replace cosmossdk.io/api => ./api` (only takes effect when cosmos-sdk itself is the main module). ArkConstellation's root and interchain modules now pin `cosmossdk.io/api` to `v0.0.0-20260729035606-58cc2eb4a66f`, matching the SDK tag's commit. Any future SDK re-pin must update both API replacements too, or generated pulsar code (mint, auth module config) can silently drift out of sync with the SDK proto.
 
 ## 3. CLEARLY MANTRA-SPECIFIC AND REMOVABLE
 - `.github/CODEOWNERS` — fully rewritten to MANTRA team handles (`@devops-admins-team`, `@development-team-blockchain`, etc.).
@@ -44,11 +44,27 @@ No changes were found in staking, slashing, distribution, gov, evidence, upgrade
 
 ---
 
-## Version drift / missing security fixes — YES, the fork is behind
+## Version drift / missing security fixes — REMEDIATED
+
+**Remediated 2026-09-01.** ArkConstellation now pins the immutable
+`github.com/MANTRA-Chain/cosmos-sdk v0.53.8-v8-mantra-1` tag at commit
+`58cc2eb4a66fcab2359a69d262b984958c8d9273`. The matching
+`cosmossdk.io/api` submodule is pinned in lockstep to
+`v0.0.0-20260729035606-58cc2eb4a66f`, whose origin metadata resolves to the
+same commit and the `api` subdirectory.
+
+The fork update was merged upstream in
+[`MANTRA-Chain/cosmos-sdk#357`](https://github.com/MANTRA-Chain/cosmos-sdk/pull/357).
+Comparing `v0.53.6-v8-mantra-1...v0.53.8-v8-mantra-1` shows the complete
+upstream v0.53.7/v0.53.8 backport sequence followed by the two MANTRA feature
+commits. This preserves the bank pre-send hooks and mint `MaxSupply` behavior
+while incorporating all fixes listed below.
+
+### Historical finding
 
 Upstream has **shipped two more v0.53.x patch releases past the fork's pin** (v0.53.7 on 2026-04-14, v0.53.8 on 2026-07-27 — 32 commits total), and the `release/v0.53.x` branch has additional unreleased commits beyond that. I confirmed directly (byte-diff) that the fork's `crypto/keys/secp256k1/secp256k1.go` and `x/auth/tx/sigs.go` are **identical to the v0.53.6 baseline** — none of these fixes were cherry-picked in independently.
 
-Security/robustness fixes the fork is missing (all landed after v0.53.6):
+Security/robustness fixes the fork was missing (all landed after v0.53.6 and now included by the v0.53.8 fork tag):
 - **`fix(crypto): validate secp256k1 pubkey SEC1 tag byte`** (#26529/#26665) — previously a malformed/invalid compressed pubkey with a bad leading byte passed the length-only check.
 - **`fix: bound compact bit array index by elems length`** (#26509/#26662) — out-of-range panic on malformed multisig bit arrays.
 - **`fix: bound multisig signature and pubkey indexing by slice lengths`** (#26515) — `ConsumeMultisignatureVerificationGas`/`VerifyMultisignature` could panic with index-out-of-range on a crafted multisig.
@@ -68,4 +84,4 @@ Most of these are **panic/DoS-class bugs reachable via a crafted transaction or 
 
 ## Verdict
 
-This fork is well-scoped and honestly not scary in isolation — the actual code changes are confined to two clearly-documented, well-tested features (bank pre-send hooks that are a no-op unless wired, and a mint max-supply cap with a proper migration), plus a pile of clearly-removable MANTRA branding/CI files, with nothing touching staking, slashing, gov, or ante-handler consensus logic. It is safe to build on **provided** ArkConstellation does three things first: (1) strip or replace the MANTRA-specific CODEOWNERS/CI/release-workflow/issue-template files, since they're dead weight tied to MANTRA's own GitHub repo; (2) explicitly decide whether to adopt the `MaxSupply` mint semantics and the bank-hooks extension point (both are opt-in/default-inert, but they're non-standard SDK surface a different chain should consciously choose, not inherit blindly); and (3) most importantly, pull forward the ~10 upstream panic/DoS and correctness fixes shipped in v0.53.7/v0.53.8 (crypto pubkey validation, multisig bounds-checking, tx decode nil-pointer/panic fixes, the gov EndBlocker proposal-processing bug, the cachemulti race, and the CometBFT bump) before mainnet, since the fork currently predates all of them and several are directly reachable by a malicious or malformed transaction against a live validator.
+This fork is well-scoped: its functional differences from upstream are confined to two clearly documented, tested features (bank pre-send hooks that are a no-op unless wired, and a mint max-supply cap with a proper migration), plus repository/CI customization. ArkConstellation has now completed the most important original action item by moving to the v0.53.8 fork tag containing the upstream panic/DoS and correctness fixes. The remaining governance items are to strip or replace MANTRA-specific repository metadata and to keep the `MaxSupply` and bank-hook semantics as explicit product decisions.

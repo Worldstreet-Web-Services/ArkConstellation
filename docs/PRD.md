@@ -52,7 +52,7 @@ Ship a sovereign, EVM-compatible L1, forked from `mantrachain`, capable of safel
 | Dependency | Version | Source |
 |------------|---------|--------|
 | CometBFT | `v0.38.23` | Upstream, unmodified |
-| Cosmos SDK | `v0.53.6-v8-mantra-1` | **MANTRA fork** — diff required |
+| Cosmos SDK | `v0.53.8-v8-mantra-1` | **MANTRA fork** — audited against upstream |
 | `cosmos/evm` | `v0.6.2-v8-mantra-1` | **MANTRA fork** — diff required |
 | go-ethereum | `v1.16.2-cosmos-1` | Cosmos Labs fork (transitive) |
 | IBC-go | `v10.5.1` | Upstream, unmodified |
