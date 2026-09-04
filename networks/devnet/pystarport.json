@@ -95,7 +95,7 @@
         },
         "staking": {
           "params": {
-            "unbonding_time": "300s",
+            "unbonding_time": "1814400s",
             "max_validators": 10,
             "bond_denom": "esp"
           }

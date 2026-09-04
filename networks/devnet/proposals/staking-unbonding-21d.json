@@ -17,7 +17,8 @@
     "present, not just the one being changed. Values below are the live devnet",
     "params with unbonding_time changed and nothing else.",
     "",
-    "Submit:  arkd tx gov submit-proposal staking-unbonding-21d.json \\",
+    "Submit:  arkd tx gov submit-proposal \\",
+    "           networks/devnet/proposals/staking-unbonding-21d.json \\",
     "           --from <key> --chain-id arkdevnet_9000-1",
     "Verify:  arkd query staking params"
   ],
@@ -35,7 +36,7 @@
       }
     }
   ],
-  "metadata": "ipfs://CID",
+  "metadata": "Raise arkdevnet unbonding_time 300s -> 1814400s for IBC viability",
   "deposit": "1000000000000000000esp",
   "title": "Raise staking unbonding period to 21 days for IBC interoperability",
   "summary": "Raises unbonding_time from 300s to 1814400s (21 days), matching the mainnet-locked figure from decision #10, so IBC light clients on counterparty chains can be created with a viable trusting period. Trades away the devnet's fast unbonding/slashing test cycle."

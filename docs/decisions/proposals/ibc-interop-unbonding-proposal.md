@@ -1,29 +1,33 @@
-# PROPOSAL: Where IBC interop gets tested, given the devnet's 300s unbonding period
+# DECISION: Raise the devnet's unbonding period to 21 days for IBC interop
 
-**Status:** 🟢 DECIDED 2026-09-03 — take the *alternative* path recorded below: make `arkdevnet_9000-1` mainnet-shaped at 21 days rather than standing up a second network. `networks/devnet/proposals/staking-unbonding-21d.json` is the change to submit. The devnet deviation table in `networks/devnet/README.md` must be updated in the same change.
+**Status:** 🟢 DECIDED 2026-09-03. Genesis sources now carry `1814400s`, so a devnet built from scratch is mainnet-shaped from block zero. **A devnet started before that date still runs `300s`** and only moves by governance — submit `networks/devnet/proposals/staking-unbonding-21d.json`, then confirm with `arkd query staking params`. Do not assume either path was taken.
 
-**Author:** Drafted for review, 2026-09-03.
+**Author:** Drafted 2026-09-03; restructured 2026-09-04 to record the decision rather than the proposal.
 
-**Scope:** This proposal addresses exactly one question — **which chain we open IBC channels against for interop testing**, given that `arkdevnet_9000-1` deliberately runs a 300s unbonding period. It does **not** propose changing mainnet's locked 21-day figure (decision #10), which is correct as it stands and needs no revision. It does **not** cover relayer operations or the gRPC endpoint gap, both of which are separate and still open.
-
----
-
-## Recommendation as drafted (superseded — see Status)
-
-> ## Stand up a separate **`ark-testnet-1`** with mainnet-shaped parameters for interop testing. Leave `arkdevnet_9000-1` at 300s.
-
-The devnet's fast unbonding period and IBC interoperability are **mutually exclusive on the same chain**, and both are legitimately wanted. Running two networks is cheaper than losing either capability.
-
-### Why the decision went the other way
-
-The operator of both devnet validators is the same party driving interop, and the
-launch-readiness work that motivated fast unbonding tests is complete. With no
-remaining need to exercise unbonding on *this* chain, a second network is pure
-overhead — and a devnet that matches mainnet's staking parameters is strictly
-more representative for everything else being tested against it. Unbonding
-scenarios, if they resurface, get a throwaway chain.
+**Scope:** One question — **which chain we open IBC channels against**, given that `arkdevnet_9000-1` was configured with a 300s unbonding period. It does **not** change mainnet's locked 21-day figure (decision #10), which is correct as it stands. It does **not** cover relayer operations. The gRPC gap it originally listed as blocking was resolved on 2026-09-04 and is no longer open.
 
 ---
+
+## Decision
+
+> ## Make `arkdevnet_9000-1` **mainnet-shaped at 21 days** (`1814400s`), matching locked decision #10.
+
+The devnet's fast unbonding period and IBC interoperability are mutually exclusive on
+the same chain. Both were legitimately wanted, so the drafted recommendation was to run
+a second network and keep each capability on its own chain.
+
+**That was rejected.** The party operating both devnet validators is the same one
+driving interop, and the launch-readiness work that motivated in-session unbonding
+rehearsals is complete. With no remaining need to exercise unbonding on *this* chain, a
+second network is pure overhead — and a devnet matching mainnet's staking parameters is
+strictly more representative for everything else tested against it. If unbonding
+scenarios resurface, they get a throwaway chain.
+
+### What this costs
+
+In-session unbonding, redelegation and slashing-during-unbonding rehearsals — the
+documented reason the fast value existed. Anyone who needs them should expect to spin a
+separate chain rather than reverting this.
 
 ## The constraint
 
@@ -41,19 +45,6 @@ A client on MANTRA tracking Ark would therefore expire unless updated **more oft
 
 Independently of the mechanics: no counterparty's governance would approve creating a client with a three-minute trusting period, and asking them to is not a good first impression.
 
-## Why not simply raise the devnet's unbonding period
-
-Because the 300s figure is doing a job. Per `networks/devnet/README.md`, it exists so that unbonding, redelegation, and slashing-during-unbonding can be exercised inside a working session — scenarios that a 21-day period makes untestable locally. Raising it to an IBC-viable value would silently remove the capability the devnet was configured to provide.
-
-The two requirements genuinely conflict:
-
-| Requirement | Needs |
-|---|---|
-| Exercise unbonding/slashing in-session | Unbonding measured in **minutes** |
-| Hold an IBC channel open | Unbonding measured in **days** |
-
-A second network resolves this cleanly and matches the repo's existing pattern of distinguishing "devnet-fast" from "mainnet-shaped" configuration, rather than overloading one chain with both.
-
 ## On making the period longer still — months
 
 Raised during review: could the unbonding period be set in months, to buy more relayer-downtime tolerance?
@@ -66,23 +57,42 @@ Raised during review: could the unbonding period be set in months, to buy more r
 
 The correct remedy for relayer downtime is **redundant relayers and alerting on client age**, not an inflated trusting period. 21 days is the Cosmos Hub standard, exceeds MANTRA's 8 days, and needs no change.
 
-## What `ark-testnet-1` needs
+## Rejected alternative: a separate `ark-testnet-1`
 
-Mainnet-shaped where it matters for interop; devnet-convenient elsewhere.
+Kept for the record, since it was the drafted recommendation.
 
-| Param | Value | Reason |
-|---|---|---|
-| `staking.unbonding_time` | `1814400s` (21 days) | Matches mainnet-locked #10; yields a ~14-day trusting period |
-| `staking.historical_entries` | `10000` | Required for IBC proofs; already correct on devnet |
-| `gov.voting_period` | short (e.g. `120s`) | Keep iteration fast; not interop-relevant |
-| Public **gRPC** endpoint | required | Hermes and the Go relayer both need it; the devnet exposes RPC and LCD only |
+Stand up a second network with mainnet-shaped parameters for interop and leave
+`arkdevnet_9000-1` at `300s`, preserving both capabilities. Rejected for the reasons in
+**Decision** above: nobody needs the fast-unbonding capability on this chain any more,
+so the second network would be overhead without a beneficiary.
+
+Its requirements, if it is ever revisited: `unbonding_time` at `1814400s`,
+`historical_entries` at `10000` (already correct), a short `gov.voting_period` for
+iteration, and a public gRPC endpoint.
+
+## Applying it
+
+The change lands in two places, and both are needed:
+
+- **Genesis** — `networks/devnet/genesis-template.json` and `pystarport.json` now carry
+  `1814400s`, so any devnet built from scratch is mainnet-shaped from block zero.
+- **The running chain** — a devnet started before 2026-09-03 is still on `300s` and only
+  moves by governance. Submit `networks/devnet/proposals/staking-unbonding-21d.json`.
+  With a 120s voting period and a 1 KASH deposit it lands in about four minutes, and
+  both validators are operated by the same party, so no external coordination is needed.
+
+Verify with `arkd query staking params` rather than assuming either path was taken.
 
 ## What this does not resolve
 
-- **The gRPC gap.** `grpc.34.60.137.196.sslip.io` accepts TCP (sslip.io resolves any subdomain) but nothing serves gRPC behind it, and 9090/9091 are firewalled. Any relayer needs this regardless of which network we point it at. Infrastructure item, not a parameter.
-- **Relayer operations.** Who runs it, funded accounts on both chains, monitoring for client expiry.
-- **Rate-limit quotas** on the IBC transfer stack. The middleware is already wired; the numbers are a separate decision.
+- **Relayer operations.** Who runs it, funded accounts on both chains, and monitoring
+  for client expiry — the failure that actually kills Cosmos connections.
+- **Rate-limit quotas** on the IBC transfer stack. The middleware is already wired; the
+  numbers are a separate decision.
 
-## If the decision goes the other way
-
-If standing up a second network is judged not worth it and the devnet is to be changed instead, `networks/devnet/proposals/staking-unbonding-21d.json` is a ready-to-submit parameter change. Submitting it **removes the devnet's ability to exercise unbonding in-session**, and `networks/devnet/README.md`'s deviation table must be updated in the same change so the two do not silently disagree.
+**Resolved since drafting:** the gRPC gap. Hermes and the Go relayer both require gRPC,
+and the devnet exposed only RPC and LCD. The node was already serving gRPC on 9095 —
+`entrypoint.sh` moves it there to leave 9090 to CometBFT's Prometheus endpoint — but the
+port was never published and there was no Caddy route. Both were fixed on 2026-09-04;
+`grpc.34.60.137.196.sslip.io` now answers. This proposal is therefore the last remaining
+blocker to opening a channel.

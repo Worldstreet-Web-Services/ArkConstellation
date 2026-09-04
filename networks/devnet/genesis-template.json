@@ -31,9 +31,11 @@
     "ExtendedDenom is hardcoded to EvmDenom - this field is NEVER READ in",
     "this configuration, only for chains with a non-18-decimal display.",
     "",
-    "Devnet intentionally keeps unbonding_time/voting_period/gov-deposit",
-    "FAST rather than mirroring the decisions doc's locked mainnet figures",
-    "(21-day unbonding #10, 7-day voting #13) - see networks/devnet/README.md's",
+    "Devnet keeps voting_period/gov-deposit FAST rather than mirroring the",
+    "decisions doc's locked mainnet figures (7-day voting #13), but as of",
+    "2026-09-03 unbonding_time is MAINNET-SHAPED at 21 days (#10): a short",
+    "unbonding period caps a counterparty's IBC light-client trusting period",
+    "and makes interop unusable - see networks/devnet/README.md's",
     "deviation table for the per-field rationale. The SLASH FRACTIONS below",
     "(not just durations) match the real SDK-default values from decision",
     "#11 on both networks: testing the wrong fraction on devnet would defeat",
@@ -85,7 +87,7 @@
     },
     "staking": {
       "params": {
-        "unbonding_time": "300s",
+        "unbonding_time": "1814400s",
         "max_validators": 10,
         "bond_denom": "esp"
       }
