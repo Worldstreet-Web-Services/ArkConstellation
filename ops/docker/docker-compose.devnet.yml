@@ -44,6 +44,10 @@ services:
       CHAIN_ID: arkdevnet_9000-1
       VALIDATOR_COUNT: "2"
       SENTRY_COUNT: "2"
+      # Recovers the genesis-funded "faucet" account from this mnemonic so it
+      # matches the faucet service's key below — otherwise the faucet service
+      # would sign with an unfunded address.
+      FAUCET_MNEMONIC: ${FAUCET_MNEMONIC:?FAUCET_MNEMONIC must be set in ops/docker/.env}
     volumes:
       - genesis-data:/config
     networks:
@@ -173,6 +177,32 @@ services:
         condition: service_completed_successfully
 
   # -------------------------------------------------------------------
+  # Faucet — developer self-serve test-fund dispenser (web form + API)
+  # -------------------------------------------------------------------
+  faucet:
+    image: ark-faucet:local
+    build:
+      context: ../../
+      dockerfile: ops/docker/faucet/Dockerfile
+    container_name: ark-faucet
+    restart: unless-stopped
+    environment:
+      CHAIN_ID: arkdevnet_9000-1
+      NODE: http://sentry-0:26657
+      AMOUNT_KASH: "10"
+      DAILY_CAP_KASH: "50"
+      FAUCET_MNEMONIC: ${FAUCET_MNEMONIC:?FAUCET_MNEMONIC must be set in ops/docker/.env}
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - faucet-data:/home/nonroot/.ark/faucet
+    networks:
+      - arkdevnet
+    depends_on:
+      sentry-0:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------
   # Node Exporter — system metrics (CPU, RAM, disk, network)
   # Runs as a sidecar sharing the host's /proc and /sys for real metrics.
   # -------------------------------------------------------------------
@@ -264,6 +294,7 @@ volumes:
   sentry-1-data:
   validator-0-data:
   validator-1-data:
+  faucet-data:
   prometheus-data:
   grafana-data:
   alertmanager-data:
