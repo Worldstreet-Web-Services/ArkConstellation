@@ -40,6 +40,32 @@ The actual gap was that **9095 was never published to the host**. That is fixed 
 `docker-compose.devnet.yml` in this same change: `9095:9095` on sentry-0 and
 `9096:9095` on sentry-1.
 
+## This file is not yet the source of truth
+
+The live edge configuration was set up directly on the devnet host and is not in
+this repo — no compose file here defines Caddy, and no document mentions
+`sslip.io` or the host address. The `Caddyfile` here was written from the outside
+in, by probing which hostnames answered and reading which ports the compose
+publishes.
+
+That has a consequence worth stating plainly: **do not install this file over the
+running one.** There is a live Caddyfile on that host containing the routes that
+currently work, and this one may be missing settings it has.
+
+The intended order is baseline first, changes second:
+
+```bash
+# on the devnet host
+./capture-live-config.sh > live-edge-config.txt   # review before committing —
+                                                  # a Caddyfile can hold secrets
+```
+
+Commit that output, then re-apply this file as a diff against it. The repo then
+reflects reality, the `127.0.0.1`-versus-service-names question answers itself,
+and the next person to change a route can see what changed and why.
+
+Until then this is a proposal about the edge, not a description of it.
+
 ## Applying
 
 Upstreams are `127.0.0.1:<published port>`, on the assumption that **Caddy runs on
