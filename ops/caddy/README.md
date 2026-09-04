@@ -93,6 +93,32 @@ HTTP/1.1 request, so `000` is expected even when it is working. And note that
 **any** `*.sslip.io` name resolves to this host and completes a TCP handshake, so
 "the port is open" proves nothing about what is behind it.
 
+## Related: the node advertised a fee that could not work
+
+Fixed in the same PR, because it is the same failure shape as the endpoint work —
+the devnet telling a client something untrue about itself.
+
+`MIN_GAS_PRICES` was `0.01esp`, and a node serves that over
+`/cosmos/base/node/v1beta1/config`, the standard endpoint wallets and CLIs query
+to auto-fill fees. But `cosmos/evm` enforces a chain-wide floor of 1 gwei through
+feemarket's `min_gas_price`. So tooling asked what fee was needed, got `0.01esp`,
+built a transaction at that price, and consensus rejected it with a 30-line
+ante-handler trace ending `provided fee < minimum global fee` — which reads like
+a chain fault rather than a fee five orders of magnitude too low. It cost a failed
+governance submission to diagnose.
+
+Now `1000000000esp` on all four services in the compose. Verified end to end: the
+node advertises `1000000000.000000000000000000esp`, and a transaction built from
+that advertised value is accepted (`code: 0`).
+
+**Applied to the sentries only on the running host.** `MIN_GAS_PRICES` is fixed at
+container creation, and recreating a validator on a two-validator chain drops
+consensus to 50% — below the two-thirds threshold — and halts block production.
+The sentries are the public face, so they are what tooling queries; the validators
+carry the old local value until their next natural restart, which is harmless
+because it is advisory and CheckTx-only. Chain height advanced 218,140 → 218,165
+through the sentry recreate with both validators untouched at `Up 7 days`.
+
 ## Note for production
 
 `sslip.io` should not outlive the devnet. The hostnames encode the IP, so every

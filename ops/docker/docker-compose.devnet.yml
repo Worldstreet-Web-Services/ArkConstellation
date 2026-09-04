@@ -19,6 +19,19 @@
 #   5. Stop:
 #      docker compose -f ops/docker/docker-compose.devnet.yml down -v
 #
+# MIN_GAS_PRICES is 1000000000esp (1 gwei), matching the chain-wide floor that
+# cosmos/evm enforces through feemarket's min_gas_price. It was "0.01esp", which
+# is not merely low but actively misleading: a node serves its local
+# minimum-gas-prices over /cosmos/base/node/v1beta1/config, the standard endpoint
+# wallets and CLIs query to auto-fill fees. Tooling asked what fee was needed, got
+# 0.01esp, built a transaction at that price, and consensus rejected it with a
+# 30-line ante-handler trace ending "provided fee < minimum global fee" — which
+# reads like a chain fault rather than a fee five orders of magnitude too low.
+#
+# The local value is advisory and CheckTx-only; the feemarket value is consensus.
+# Setting them equal is correct: no transaction that would pass consensus is
+# dropped locally, and none that would fail wastes mempool space.
+#
 # Ports (sentries are the only publicly reachable nodes):
 #   sentry-0:  P2P=26656  RPC=26657  LCD=1317  Prometheus=9090  gRPC=9095
 #   sentry-1:  P2P=26676  RPC=26677  LCD=1318  Prometheus=9091  gRPC=9096
@@ -67,7 +80,7 @@ services:
       NODE_ROLE: sentry
       SENTRY_INDEX: "0"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
       ENABLE_API: "true"
       ENABLE_EVM_RPC: "true"
@@ -103,7 +116,7 @@ services:
       NODE_ROLE: validator
       VALIDATOR_INDEX: "0"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
     # NO ports exposed — validator is never publicly reachable
     networks:
@@ -129,7 +142,7 @@ services:
       NODE_ROLE: sentry
       SENTRY_INDEX: "1"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
       ENABLE_API: "true"
       ENABLE_EVM_RPC: "true"
@@ -165,7 +178,7 @@ services:
       NODE_ROLE: validator
       VALIDATOR_INDEX: "1"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
     networks:
       - arkdevnet
