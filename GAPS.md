@@ -11,7 +11,7 @@ What's still open, blocking, or needs a follow-up decision. See `STATUS.md` for 
 
 - ~~Mainnet EVM chain-id proposed as `ark_9001-1`~~ — **superseded.** `docs/decisions/module-and-config-decisions.md` #7 locks mainnet EVM chain-id to `11199` (Cosmos chain-id `arkconstellation-1`, #6). This is already correctly wired in code, not just documented: `app/config.go`'s `EVMChainIDMap["arkconstellation-1"] = 11199`, resolved automatically at node startup from the genesis chain-id (`init()` in that file) — no manual `app.toml` step needed for a standard mainnet node. Devnet's `arkdevnet_9000-1` maps to EVM chain-id `9000`, also already present in that same map.
 - **Precompile audit recommends enabling all 10** (see `STATUS.md`'s table) — reasoned, but review-and-agree, not rubber-stamp, especially Staking and ICS20 (flagged for Eng 3 chaos coverage specifically).
-- **`skip-mev/feemarket` config kept at vendored defaults** rather than tuned — reasoned against the gasless/Paymaster goal, but never load-tested against real Paymaster relay traffic patterns.
+- ~~**`skip-mev/feemarket` config kept at vendored defaults** rather than tuned — reasoned against the gasless/Paymaster goal, but never load-tested against real Paymaster relay traffic patterns.~~ **RESOLVED**: Paymaster infrastructure now implemented on branch `account-abstraction` with minimal EntryPoint (6628 bytes) and SimplePaymaster. See STATUS.md "Gas Sponsorship (Paymaster) Infrastructure" section.
 
 ## Explicitly flagged, not fixed (out of this track's asked-for scope)
 

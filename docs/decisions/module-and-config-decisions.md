@@ -225,6 +225,36 @@ When a decision is made, update the Status column with ✅ Keep, ❌ Strip, or �
 
 ---
 
+## Gas Sponsorship (Paymaster) Model
+
+### 18. Paymaster Infrastructure — 🔒 ERC-4337 with Minimal EntryPoint
+
+**Decision:** Implement gas sponsorship using ERC-4337 Paymaster pattern with a minimal EntryPoint implementation to fit within EIP-170 contract size limits.
+
+**Rationale:**
+- Native Cosmos `x/feegrant` cannot sponsor EVM transactions (only Cosmos-message path)
+- Standard ERC-4337 EntryPoint (29425 bytes) exceeds EIP-170 limit (24576 bytes) on devnet
+- Custom minimal EntryPoint (6628 bytes) provides essential Paymaster functionality while fitting within size limits
+- ERC-4337 is the industry standard for account abstraction and gas sponsorship
+
+**Implementation Details:**
+- **MinimalEntryPoint:** Custom implementation with essential functions (handleOps, getUserOpHash, depositTo/withdrawTo, nonce management)
+- **SimplePaymaster:** Basic Paymaster contract that sponsors all user operations (MVP - no whitelisting or rate limiting)
+- **Relayer Service:** Node.js service to sign and sponsor UserOperations via handleOps
+- **Deployed Addresses (Devnet):**
+  - EntryPoint: `0xD6F4B34b519838DA78C03005ccdafFE94F58077E`
+  - SimplePaymaster: `0x6493ff1902c0cF198f279726d387c783b83bDe05`
+
+**Production Considerations:**
+- Replace minimal EntryPoint with full ERC-4337 implementation when chain size limits allow
+- Add Paymaster access controls (whitelisting, rate limiting, gas cost limits)
+- Implement robust relayer infrastructure with monitoring and retry logic
+- Consider EIP-7702 (Account Abstraction) as an alternative for future upgrades
+
+**Code Location:** `contracts/paymaster/` (separate from core chain codebase)
+
+---
+
 ## Token Distribution (Genesis Allocations)
 
 > Approved total supply: **1,000,000,000 KASH** (one billion). All amounts below sum to this total.
