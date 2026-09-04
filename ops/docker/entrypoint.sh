@@ -15,7 +15,11 @@ set -eu
 
 NODE_ROLE="${NODE_ROLE:?NODE_ROLE is required: 'validator' or 'sentry'}"
 CHAIN_ID="${CHAIN_ID:-arkdevnet_9000-1}"
-MIN_GAS_PRICES="${MIN_GAS_PRICES:-0.01esp}"
+# Default must match the chain-wide floor cosmos/evm enforces via feemarket
+# min_gas_price (1 gwei). A node serves this over
+# /cosmos/base/node/v1beta1/config, which is what clients auto-fill fees from,
+# so a lower default advertises a fee that consensus rejects.
+MIN_GAS_PRICES="${MIN_GAS_PRICES:-1000000000esp}"
 PROMETHEUS="${PROMETHEUS:-true}"
 ENABLE_API="${ENABLE_API:-false}"
 ENABLE_EVM_RPC="${ENABLE_EVM_RPC:-false}"

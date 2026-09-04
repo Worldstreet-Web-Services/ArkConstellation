@@ -28,6 +28,11 @@ Every certificate is valid and renewing normally; the ACME log shows only
 > transient failures; re-tested with a longer timeout, from both a laptop and the
 > VM itself, all three return correctly and always have. No route needed fixing.
 > The record is kept here so the same false alarm is not raised twice.
+>
+> **Why it happened, since it will happen again.** A cold `lcd.` request has been
+> measured at 23.1 s against 0.76 s warm. Any probe with a timeout under ~30 s will
+> intermittently report these endpoints as dead. Use a generous timeout, and treat a
+> single failed probe as unproven rather than as an outage.
 
 ## The one real gap: gRPC
 
@@ -44,10 +49,14 @@ tcp   0  0 :::9090   :::*  LISTEN
 tcp   0  0 :::9095   :::*  LISTEN
 ```
 
-**What is missing is the port mapping.** `docker port ark-sentry-0` lists 8100,
-8545, 8546, 9090, 26656 and 26657 — no 9095 — so nothing outside the compose
-network can reach it. Publishing it is the fix, added in
-`ops/docker/docker-compose.devnet.yml`.
+**What is missing is the port mapping.** `docker port ark-sentry-0` showed no
+9095, so nothing outside the compose network could reach it. Publishing it is the
+fix, added in `ops/docker/docker-compose.devnet.yml`, bound to `127.0.0.1` since
+Caddy is a host process proxying to localhost.
+
+(An earlier draft quoted that command's output as omitting 1317 as well. It does
+not — 1317 is published and answers. The quoted list was a `tail` truncation of my
+own terminal, not the command's output.)
 
 ## Applied 2026-09-04
 
@@ -107,9 +116,20 @@ ante-handler trace ending `provided fee < minimum global fee` — which reads li
 a chain fault rather than a fee five orders of magnitude too low. It cost a failed
 governance submission to diagnose.
 
-Now `1000000000esp` on all four services in the compose. Verified end to end: the
-node advertises `1000000000.000000000000000000esp`, and a transaction built from
-that advertised value is accepted (`code: 0`).
+Now `1000000000esp` on all four services in the compose, in `entrypoint.sh`'s
+default, and in `pystarport.json` — the second devnet path, without which "a fresh
+devnet is consistent from genesis" was untrue. Verified end to end: the node
+advertises `1000000000.000000000000000000esp`, and a transaction built from that
+advertised value is accepted (`code: 0`).
+
+**One precision.** Matching the two values is right, but "equal" only holds at
+idle. `min_gas_price` is a floor; feemarket's `base_fee` moves with block
+utilisation, and `NewDynamicFeeChecker` is also in the ante chain, so under load
+the required fee rises above the advertised floor. A client that wants to survive
+that should use `base_fee` with a margin rather than the advertised minimum —
+`ops/docker/faucet/faucet.py:111-123` already does exactly this, at `base_fee ×
+1.5`. The fix removes a value that could *never* work; it does not make the
+advertised number sufficient in all conditions.
 
 **Applied to the sentries only on the running host.** `MIN_GAS_PRICES` is fixed at
 container creation, and recreating a validator on a two-validator chain drops
