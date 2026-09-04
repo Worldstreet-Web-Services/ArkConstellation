@@ -65,7 +65,7 @@
     },
 
     "app-config": {
-      "minimum-gas-prices": "0.01esp"
+      "minimum-gas-prices": "1000000000esp"
     },
 
     "genesis": {

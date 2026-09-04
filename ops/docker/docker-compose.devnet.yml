@@ -13,17 +13,33 @@
 #   3. View logs:
 #      docker compose -f ops/docker/docker-compose.devnet.yml logs -f
 #   4. Access monitoring:
-#      Grafana:       http://localhost:3000 (admin / arkconstellation)
+#      Grafana:       http://localhost:3001 (admin / arkconstellation)
 #      Prometheus:    http://localhost:9092
 #      AlertManager:  http://localhost:9093
 #   5. Stop:
 #      docker compose -f ops/docker/docker-compose.devnet.yml down -v
 #
+# MIN_GAS_PRICES is 1000000000esp (1 gwei), matching the chain-wide floor that
+# cosmos/evm enforces through feemarket's min_gas_price. It was "0.01esp", which
+# is not merely low but actively misleading: a node serves its local
+# minimum-gas-prices over /cosmos/base/node/v1beta1/config, the standard endpoint
+# wallets and CLIs query to auto-fill fees. Tooling asked what fee was needed, got
+# 0.01esp, built a transaction at that price, and consensus rejected it with a
+# 30-line ante-handler trace ending "provided fee < minimum global fee" — which
+# reads like a chain fault rather than a fee five orders of magnitude too low.
+#
+# The local value is advisory and CheckTx-only; the feemarket value is consensus.
+# Matching them removes a value that could never work — but "equal" holds only at
+# idle. min_gas_price is a floor; feemarket's base_fee moves with utilisation and
+# NewDynamicFeeChecker is also in the ante chain, so under load the required fee
+# rises above this. Clients that must survive that should use base_fee with a
+# margin, as ops/docker/faucet/faucet.py:111-123 does at base_fee x 1.5.
+#
 # Ports (sentries are the only publicly reachable nodes):
-#   sentry-0:  P2P=26656  RPC=26657  LCD=1317  Prometheus=9090
+#   sentry-0:  P2P=26656  RPC=26657  LCD=1317  Prometheus=9090  gRPC=9095 (loopback)
 #   sentry-1:  P2P=26676  RPC=26677  LCD=1318  Prometheus=9091
 #   (validators have NO public ports)
-#   Grafana:    3000
+#   Grafana:    3001  (3000 is Blockscout frontend)
 #   Prometheus: 9092
 #   AlertManager: 9093
 
@@ -67,7 +83,7 @@ services:
       NODE_ROLE: sentry
       SENTRY_INDEX: "0"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
       ENABLE_API: "true"
       ENABLE_EVM_RPC: "true"
@@ -75,7 +91,8 @@ services:
       - "26656:26656"   # P2P
       - "26657:26657"   # RPC
       - "1317:1317"     # Cosmos LCD/API
-      - "9090:9090"     # Prometheus metrics
+      - "9090:9090"     # Prometheus metrics (CometBFT)
+      - "127.0.0.1:9095:9095"   # Cosmos gRPC — Caddy proxies to localhost
       - "8545:8545"     # EVM JSON-RPC
       - "8546:8546"     # EVM WebSocket
       - "8100:8100"     # EVM geth metrics
@@ -102,7 +119,7 @@ services:
       NODE_ROLE: validator
       VALIDATOR_INDEX: "0"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
     # NO ports exposed — validator is never publicly reachable
     networks:
@@ -128,7 +145,7 @@ services:
       NODE_ROLE: sentry
       SENTRY_INDEX: "1"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
       ENABLE_API: "true"
       ENABLE_EVM_RPC: "true"
@@ -136,7 +153,7 @@ services:
       - "26676:26656"   # P2P
       - "26677:26657"   # RPC
       - "1318:1317"     # Cosmos LCD/API
-      - "9091:9090"     # Prometheus metrics
+      - "9091:9090"     # Prometheus metrics (CometBFT)
       - "8555:8545"     # EVM JSON-RPC
       - "8556:8546"     # EVM WebSocket
       - "8101:8100"     # EVM geth metrics
@@ -163,7 +180,7 @@ services:
       NODE_ROLE: validator
       VALIDATOR_INDEX: "1"
       CHAIN_ID: arkdevnet_9000-1
-      MIN_GAS_PRICES: "0.01esp"
+      MIN_GAS_PRICES: "1000000000esp"
       PROMETHEUS: "true"
     networks:
       - arkdevnet
