@@ -1,102 +1,53 @@
 # ArkConstellation devnet — public endpoints.
 #
-# Fixes rpc./lcd. (currently returning nothing), adds grpc. (never configured,
-# and the blocker for the Hermes IBC relayer), and pins timeouts on explorer.
-# so a slow Blockscout render fails fast instead of hanging the handshake.
+# This is the LIVE configuration captured from /etc/caddy/Caddyfile on the
+# ark-devnet host (us-central1-a) on 2026-09-04, plus one addition: the grpc.
+# route. Everything else is verbatim, so this file is now a description of what
+# is running rather than a proposal about it.
 #
-# Upstreams are 127.0.0.1:<published port> because Caddy runs on the host and is
-# not a member of the `arkdevnet` compose network, so Docker service DNS is not
-# available to it. Ports below match what docker-compose.devnet.yml publishes.
-{
-	# Uncomment while debugging; Caddy logs TLS issuance failures here and those
-	# are the usual cause of a hostname that works intermittently.
-	# debug
-}
+# Caddy runs as a host systemd unit, not a container, so upstreams are
+# localhost:<published port>.
 
-(cors) {
-	@options method OPTIONS
-	respond @options 204
-	header {
-		Access-Control-Allow-Origin "*"
-		Access-Control-Allow-Methods "GET, POST, OPTIONS"
-		Access-Control-Allow-Headers "Content-Type, Authorization"
-	}
-}
-
-# --- CometBFT RPC ------------------------------------------------------------
-# Needs websocket passthrough: Hermes subscribes to /websocket for events, and
-# a plain reverse_proxy without the Connection/Upgrade headers preserved will
-# 400 on the handshake.
 rpc.34.60.137.196.sslip.io {
-	import cors
-	reverse_proxy 127.0.0.1:26657 {
-		header_up Host {upstream_hostport}
-		header_up X-Forwarded-For {remote_host}
-	}
+    reverse_proxy localhost:26657
 }
-
-# --- Cosmos REST / LCD -------------------------------------------------------
-lcd.34.60.137.196.sslip.io {
-	import cors
-	reverse_proxy 127.0.0.1:1317
-}
-
-# --- Cosmos gRPC -------------------------------------------------------------
-# THE HERMES BLOCKER.
-#
-# There is no port conflict to resolve: entrypoint.sh already relocates the node's
-# gRPC server to 0.0.0.0:9095 specifically to leave 9090 to CometBFT's Prometheus
-# endpoint, which ops/monitoring/prometheus.yml scrapes as sentry-0:9090. The
-# only thing missing was that 9095 was never published to the host — fixed in
-# docker-compose.devnet.yml alongside this file.
-#
-# The upstream must be reached over h2c. gRPC is HTTP/2, and Caddy otherwise
-# downgrades to HTTP/1.1, at which point every call fails with a protocol error
-# that reads like a network fault rather than a config mistake.
-grpc.34.60.137.196.sslip.io {
-	reverse_proxy 127.0.0.1:9095 {
-		transport http {
-			versions h2c 2
-		}
-	}
-}
-
-# --- EVM JSON-RPC ------------------------------------------------------------
 evm.34.60.137.196.sslip.io {
-	import cors
-	reverse_proxy 127.0.0.1:8545
+    reverse_proxy localhost:8545
 }
-
 evm-ws.34.60.137.196.sslip.io {
-	reverse_proxy 127.0.0.1:8546
+    reverse_proxy localhost:8546
 }
-
-# --- Blockscout --------------------------------------------------------------
-# Intermittent failures here are usually the frontend being slow rather than
-# down — it was observed at ~56% CPU. Without explicit timeouts Caddy holds the
-# connection until the client gives up, which looks like a dead host. These make
-# it fail fast and visibly instead.
+lcd.34.60.137.196.sslip.io {
+    reverse_proxy localhost:1317
+}
 explorer.34.60.137.196.sslip.io {
-	reverse_proxy 127.0.0.1:3000 {
-		transport http {
-			dial_timeout 10s
-			response_header_timeout 30s
-		}
-	}
+    reverse_proxy localhost:3000
 }
-
 explorer-api.34.60.137.196.sslip.io {
-	import cors
-	reverse_proxy 127.0.0.1:4000 {
-		transport http {
-			dial_timeout 10s
-			response_header_timeout 30s
-		}
-	}
+    reverse_proxy localhost:4000
 }
 
-# --- Faucet ------------------------------------------------------------------
 faucet.34.60.137.196.sslip.io {
-	import cors
-	reverse_proxy 127.0.0.1:8088
+    reverse_proxy localhost:8088
+}
+
+# --- ADDED: Cosmos gRPC ------------------------------------------------------
+# Required by IBC relayers (Hermes, the Go relayer) for account queries and
+# transaction simulation. RPC and LCD are not sufficient.
+#
+# The node already serves gRPC: entrypoint.sh moves it to 0.0.0.0:9095 to leave
+# 9090 to CometBFT's Prometheus endpoint, and `netstat` inside ark-sentry-0
+# confirms :::9095 LISTEN. What is missing is that 9095 is not published to the
+# host — see the port addition in ops/docker/docker-compose.devnet.yml. Until
+# sentry-0 is recreated with that mapping, this route has nothing to reach.
+#
+# h2c is required. gRPC is HTTP/2; without this Caddy speaks HTTP/1.1 to the
+# upstream and every call fails with a protocol error that reads like a network
+# fault rather than a configuration mistake.
+grpc.34.60.137.196.sslip.io {
+    reverse_proxy localhost:9095 {
+        transport http {
+            versions h2c 2
+        }
+    }
 }

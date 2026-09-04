@@ -1,122 +1,84 @@
 # Devnet edge (Caddy)
 
-## What was broken
+Caddy terminates TLS and routes `*.34.60.137.196.sslip.io` to the devnet's
+services. It runs as a **host systemd unit** on `ark-devnet` (us-central1-a) —
+not a container — so upstreams are `localhost:<published port>`.
 
-Probed 2026-09-03 from outside:
+`Caddyfile` here is the live `/etc/caddy/Caddyfile`, captured 2026-09-04, plus
+the `grpc.` route. It is a description of what runs, not a proposal.
+
+## Endpoint status, measured 2026-09-04
 
 | Host | Result | |
 |---|---|---|
-| `evm.` | 405 | fine — JSON-RPC rejects GET |
-| `faucet.` | 200 | fine |
-| `explorer-api.` | 404 at `/` | fine — real API paths work |
-| `explorer.` | intermittent | succeeded and failed minutes apart |
-| `rpc.` | nothing | **broken** |
-| `lcd.` | nothing | **broken** |
-| `grpc.` | nothing | **never configured** |
+| `rpc.` | 200 | working |
+| `lcd.` | 501 | working — LCD returns 501 for `GET /`, which is correct |
+| `explorer.` | 200 | working |
+| `explorer-api.` | 404 at `/` | working — no route at root, real API paths respond |
+| `evm.` | 405 | working — JSON-RPC rejects GET |
+| `faucet.` | 200 | working |
+| `grpc.` | 000 | **the only genuine gap** |
 
-The chain itself was healthy throughout (block 197,467, and the direct-IP ports
-26657/1317 answered normally), so this is edge routing, not the node.
+Every certificate is valid and renewing normally; the ACME log shows only
+`info` lines, no failures, with expiries in November.
 
-Blockscout kept working because it has its own database and indexes through the
-**EVM** JSON-RPC, which was up. It never touches the Cosmos RPC or LCD.
+> **Correction.** An earlier revision of this file reported `rpc.` and `lcd.` as
+> broken and `explorer.` as intermittent, and proposed changes to fix them. That
+> was wrong. Those probes ran with 12–15 second timeouts from a laptop and hit
+> transient failures; re-tested with a longer timeout, from both a laptop and the
+> VM itself, all three return correctly and always have. No route needed fixing.
+> The record is kept here so the same false alarm is not raised twice.
 
-## The gRPC port — no conflict to resolve
+## The one real gap: gRPC
 
-An earlier draft of this change claimed 9090 was contested and proposed moving
-Prometheus. That was wrong, and worth recording so nobody repeats it.
+IBC relayers need gRPC for account queries and transaction simulation. RPC and
+LCD are not enough.
 
-`entrypoint.sh` **already** relocates the node's gRPC server:
+The node is already serving it. `entrypoint.sh` moves gRPC to `0.0.0.0:9095`,
+deliberately leaving 9090 to CometBFT's Prometheus endpoint that
+`ops/monitoring/prometheus.yml` scrapes as `sentry-0:9090`:
 
-```sh
-# Ensure gRPC is on 9095 to avoid port collision with CometBFT Prometheus on 9090
-sed -i 's|^address = "0.0.0.0:9090"|address = "0.0.0.0:9095"|' app.toml
+```
+$ docker exec ark-sentry-0 netstat -tln | grep 909
+tcp   0  0 :::9090   :::*  LISTEN
+tcp   0  0 :::9095   :::*  LISTEN
 ```
 
-So gRPC listens on 9095 inside the container and 9090 belongs to CometBFT's
-Prometheus endpoint, which `ops/monitoring/prometheus.yml` scrapes by name as
-`sentry-0:9090`. Moving Prometheus would have broken monitoring to fix nothing.
-
-The actual gap was that **9095 was never published to the host**. That is fixed in
-`docker-compose.devnet.yml` in this same change: `9095:9095` on sentry-0 and
-`9096:9095` on sentry-1.
-
-## This file is not yet the source of truth
-
-The live edge configuration was set up directly on the devnet host and is not in
-this repo — no compose file here defines Caddy, and no document mentions
-`sslip.io` or the host address. The `Caddyfile` here was written from the outside
-in, by probing which hostnames answered and reading which ports the compose
-publishes.
-
-That has a consequence worth stating plainly: **do not install this file over the
-running one.** There is a live Caddyfile on that host containing the routes that
-currently work, and this one may be missing settings it has.
-
-The intended order is baseline first, changes second:
-
-```bash
-# on the devnet host
-./capture-live-config.sh > live-edge-config.txt   # review before committing —
-                                                  # a Caddyfile can hold secrets
-```
-
-Commit that output, then re-apply this file as a diff against it. The repo then
-reflects reality, the `127.0.0.1`-versus-service-names question answers itself,
-and the next person to change a route can see what changed and why.
-
-Until then this is a proposal about the edge, not a description of it.
+**What is missing is the port mapping.** `docker port ark-sentry-0` lists 8100,
+8545, 8546, 9090, 26656 and 26657 — no 9095 — so nothing outside the compose
+network can reach it. Publishing it is the fix, added in
+`ops/docker/docker-compose.devnet.yml`.
 
 ## Applying
 
-Upstreams are `127.0.0.1:<published port>`, on the assumption that **Caddy runs on
-the host** rather than inside the `arkdevnet` compose network — no Caddy service
-exists in this repo's compose files. If it is in fact containerised and shares
-that network, swap the addresses for service names (`sentry-0:9095`, and so on);
-Docker DNS will not resolve those from outside the network.
+The host runs from a checkout at `/home/Evangel/ArkConstellation`, so once this
+merges:
 
 ```bash
-docker compose -f ops/docker/docker-compose.devnet.yml up -d sentry-0 sentry-1
-caddy validate --config Caddyfile
-caddy reload  --config Caddyfile     # zero-downtime
+# on ark-devnet
+cd ~/ArkConstellation && git pull
+docker compose -f ops/docker/docker-compose.devnet.yml up -d sentry-0   # recreates with 9095
+sudo cp ops/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy                                            # zero-downtime
 ```
+
+Recreating `sentry-0` briefly interrupts the public RPC, LCD and EVM endpoints.
+The validators are separate containers and keep producing blocks throughout.
 
 ## Verifying
-
-```bash
-curl -s https://rpc.34.60.137.196.sslip.io/status | jq .result.sync_info.latest_block_height
-curl -s https://lcd.34.60.137.196.sslip.io/cosmos/staking/v1beta1/params | jq .params
-
-# gRPC: 415 means a real gRPC server answered a non-gRPC request. 000 means
-# nothing is listening — note that ANY *.sslip.io name will still resolve and
-# complete a TCP handshake, so "the port is open" proves nothing here.
-curl -s -o /dev/null -w '%{http_code} %{http_version}\n' https://grpc.34.60.137.196.sslip.io/
-```
-
-Definitive gRPC check:
 
 ```bash
 grpcurl grpc.34.60.137.196.sslip.io:443 list
 ```
 
-## Diagnosing the intermittent explorer
-
-The config adds explicit dial and response timeouts so a slow backend fails fast
-instead of hanging. If it still flaps, the cause is almost certainly TLS
-issuance rather than proxying — enable `debug` in the global block and look for
-certificate errors for that specific hostname:
-
-```bash
-journalctl -u caddy -f | grep -iE "certificate|obtain|renew|tls"
-echo | openssl s_client -connect explorer.34.60.137.196.sslip.io:443 \
-  -servername explorer.34.60.137.196.sslip.io 2>/dev/null | openssl x509 -noout -dates -issuer
-```
-
-Each hostname gets its own certificate, so one can fail while its neighbours are
-fine — which matches the observed pattern exactly.
+A plain `curl` is not a useful check here: gRPC is HTTP/2 and will not answer an
+HTTP/1.1 request, so `000` is expected even when it is working. And note that
+**any** `*.sslip.io` name resolves to this host and completes a TCP handshake, so
+"the port is open" proves nothing about what is behind it.
 
 ## Note for production
 
-`sslip.io` is fine for a devnet and should not outlive it. The hostnames encode
-the IP, so the endpoints cannot survive the host moving, and every consumer that
-has hard-coded one breaks at once. Migrate to an Ark-owned domain before anything
-depends on these — the same point `networks/devnet/README.md` already makes.
+`sslip.io` should not outlive the devnet. The hostnames encode the IP, so every
+consumer that hard-codes one breaks the moment the host moves.
+`networks/devnet/README.md` already makes this point.
