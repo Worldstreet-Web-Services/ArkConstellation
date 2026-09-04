@@ -106,8 +106,11 @@ and the devnet exposed only RPC and LCD. The node was already serving gRPC on 90
 port was never published and there was no Caddy route. Both were fixed on 2026-09-04 and
 `grpc.34.60.137.196.sslip.io` now answers.
 
-That infra change is **not in this PR's diff** — it landed in `ops/` via #30, and is
-stated here only as context for why this proposal no longer lists gRPC as blocking.
-Review it there, not from these five files.
+That infra change is **not in this PR's diff**, and two things about it are separate:
+it is **applied and live on the host**, verified by a real gRPC call returning
+`grpc-status: 0` through Caddy — but it is **not yet in this repo**. The `ops/` change
+describing it is **in flight as #30**, not merged. If this PR lands first, that is a
+decision record citing a route the tree does not yet contain. Review the route there,
+not from these files.
 
 With both this and gRPC applied, **nothing further blocks opening a channel.**
