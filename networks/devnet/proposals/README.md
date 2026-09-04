@@ -48,6 +48,20 @@ then confirm the effect directly rather than trusting the proposal status:
 arkd query staking params
 ```
 
+## Rolling back is asymmetric
+
+A passed proposal and the files that describe it revert differently, and this
+catches people out.
+
+`git revert` restores the JSON and the docs. It does **not** restore the chain —
+`arkdevnet_9000-1` is at 21 days by passed governance and only moves by another
+proposal, roughly four minutes. Reverting the commit alone leaves the repo saying
+`300s` while the chain runs `1814400s`: the same contradiction this directory
+exists to prevent, pointing the other way.
+
+To actually roll back, do both: submit the reversing proposal, confirm with
+`arkd query staking params`, then revert the files.
+
 ## After a proposal lands
 
 Update the row above, and check whether `../README.md`'s deviation table still
