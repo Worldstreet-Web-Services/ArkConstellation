@@ -69,6 +69,14 @@ Single local node booted from HEAD:
 - **Components**: MinimalEntryPoint, SimplePaymaster, Node.js relayer service
 - **Documentation**: Decision recorded in `docs/decisions/module-and-config-decisions.md` #18
 - **Note**: Standard ERC-4337 EntryPoint too large (29425 bytes > 24576 limit); custom minimal implementation used for MVP
+  > ⚠️ **The live devnet does not match this.** `/cosmos/evm/feemarket/v1/params` on
+  > `arkdevnet_9000-1` returns `min_gas_price: 1000000000`, not `0`, as of 2026-09-04.
+  > A non-zero chain-wide floor means genuinely zero-fee sponsored transactions are
+  > not possible — a paymaster still pays 1 gwei per gas unit. That is directly
+  > relevant to #28 (ERC-4337 Paymaster). Either the decision changed and this line
+  > is stale, or genesis did not apply it. **Left as-is deliberately rather than
+  > edited to match the chain** — this records an intent, and whoever owns it should
+  > decide which of the two is wrong.
 
 ### Eng 3 Dependency & Next Tags
 - Blocked on Eng 3 (Security/Chaos) reporting before tagging `ark-v1.0.0-rc1`.
