@@ -26,6 +26,8 @@ help:
 	@echo "  make blockscout-up         Start local Blockscout explorer via Docker Compose"
 	@echo "  make blockscout-down       Stop local Blockscout explorer"
 	@echo "  make blockscout-logs       Tail Blockscout explorer logs"
+	@echo "  make release-gate-check    Verify Eng 3 Security & Chaos sign-off release gate"
+	@echo "  make tag-rc                Safely tag a release candidate after verifying Eng 3 gate"
 	@echo ""
 	@echo "Run 'make [subcommand]' to see the available commands for each subcommand."
 
@@ -275,3 +277,19 @@ build-and-run-single-node: build
 	./build/arkd start --home .arksinglenodetest --minimum-gas-prices 0esp
 
 .PHONY: build-and-run-single-node
+
+###############################################################################
+###                           Release Gating                                ###
+###############################################################################
+
+release-gate-check:
+	@python3 scripts/release/verify-eng3-signoff.py $(VERSION)
+
+tag-rc:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "!!! Error: VERSION is required. Usage: make tag-rc VERSION=ark-v1.0.0-rc1" >&2; \
+		exit 1; \
+	fi
+	@./scripts/release/tag-release.sh $(VERSION)
+
+.PHONY: release-gate-check tag-rc
