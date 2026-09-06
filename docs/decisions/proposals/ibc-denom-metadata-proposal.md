@@ -1,6 +1,6 @@
 # PROPOSAL: How IBC assets get correct decimals, given regular onboarding
 
-**Status:** 🟠 PROPOSAL — not decided. Requires sign-off from whoever owns the module set (decision #2, which removed `x/tokenfactory`).
+**Status:** 🟠 PROPOSAL — not decided. Requires sign-off from whoever owns the module set (decision #2, which removed `x/tokenfactory`). **Option A tested and eliminated 2026-09-07** — see below; the recommendation is now B.
 
 **Author:** Drafted for review, 2026-09-05.
 
@@ -76,13 +76,30 @@ next upgrade window.
 
 ## Options
 
-**A — Check upstream first.** This is a known issue and fixes exist upstream
-referencing exactly this failure ("decimals reverts when Display doesn't match
-DenomUnit for IBC tokens", "use the highest denom unit when deploying an ERC20").
-**I could not confirm which release contains them**, and Ark runs
-`cosmos/evm v0.6.2-ark-1`, a fork. Confirming whether a later `cosmos/evm` — or
-MANTRA's own `v8.5.0-pre.1`, which is one minor ahead — already fixes this is the
-cheapest possible outcome and should happen before any code is written here.
+**A — Upgrade `cosmos/evm`. ❌ TESTED AND RULED OUT (2026-09-07).**
+
+MANTRA Dukong runs `v8.5.0-pre.1`, one minor version ahead of Ark, on the same
+`cosmos/evm` lineage. It holds two IBC-derived token pairs. Both report the same
+defect:
+
+| MANTRA ERC-20 | Source | `decimals()` | Correct |
+|---|---|---|---|
+| `0x17735FA6…` | our `esp` over IBC | **0** | 18 |
+| `0xaF43A2dA…` | `uosmo` from Osmosis | **0** | 6 |
+| `0x88B60172…` | native, via `x/tokenfactory` | **6** | 6 ✅ |
+
+The contrast in the third row is the whole answer. A version one minor ahead
+behaves identically for IBC assets, while its *native* denoms are correct —
+because `x/tokenfactory` writes proper metadata at creation time.
+
+**This is not a code defect and no upstream release can fix it.** The exponent
+never crosses the wire, so the receiving chain has nothing to derive from; the
+synthesised metadata carries a single unit at exponent 0, and "use the highest
+denom unit" still yields 0 because there is only one. Recovering the value
+requires supplying it on the destination chain, out of band.
+
+The upstream fixes found in the changelog address adjacent symptoms — a query
+reverting, a panic on missing coin info — not the absence of the data itself.
 
 **B — A minimal governance-gated metadata setter.** One message,
 `MsgSetDenomMetadata`, authority-gated to gov. Roughly a hundred lines. It cannot
@@ -100,7 +117,15 @@ arrive before any fix lands.
 
 ## Recommendation
 
-**A, then B if A does not resolve it.** D unconditionally and immediately.
+**B.** A was tested and ruled out; C does not fit the stated cadence. **D
+unconditionally and immediately**, since it protects every asset arriving before
+B lands.
+
+Note what the evidence implies about decision #2: MANTRA gets correct decimals on
+its native denoms *because it kept `x/tokenfactory`*. Ark removed it and now has
+no route at all. That does not make removing 13,000 lines and a Minter permission
+wrong — but it does mean the specific capability of writing denom metadata needs
+replacing, and B is the smallest possible replacement.
 
 ## The consequence that makes this more than cosmetic
 
