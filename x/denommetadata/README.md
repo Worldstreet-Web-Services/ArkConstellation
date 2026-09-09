@@ -80,8 +80,9 @@ Governance-only, so there is no bespoke CLI command — submit it as a proposal:
       "name": "MANTRA",
       "symbol": "OM",
       "denom_units": [
-        { "denom": "amantra", "exponent": 0 },
-        { "denom": "mantra",  "exponent": 18 }
+        { "denom": "ibc/784D26186FFF0AFB5DD933EEE6E6E1C7EEC542B44566E7626E8E4A35BC66CC7E",
+          "exponent": 0, "aliases": ["amantra"] },
+        { "denom": "mantra", "exponent": 18 }
       ]
     }]
   }],
@@ -94,12 +95,15 @@ Governance-only, so there is no bespoke CLI command — submit it as a proposal:
 Take the exponent from the **source chain's** metadata, not from the
 IBC-derived ERC-20 contract — the contract is what is wrong.
 
-Two things `banktypes.Metadata.Validate()` enforces that catch people out:
+Two things `banktypes.Metadata.Validate()` enforces that catch people out — the
+example above already follows both:
 
 - **The first denom unit must be the base denom at exponent 0.** For an IBC
   asset that is the `ibc/<hash>`, not the source chain's base name. Writing
   `{"denom": "amantra", "exponent": 0}` first looks natural and is rejected; put
-  the hash first and carry `amantra` as an alias.
+  the hash first and carry `amantra` as an alias instead — `amantra` is not
+  otherwise needed, since `Decimals()` resolves through `display`, not through
+  any alias.
 - **A unit named by `display` must exist.** This is the rule whose absence causes
   `decimals() = 0`, and bank already enforces it — which is why this module adds
   no check of its own for it. An earlier revision did, and it was removed once
