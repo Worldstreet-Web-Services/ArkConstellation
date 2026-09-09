@@ -69,20 +69,21 @@ jobs:
         # it is a JSON-merge-patch overlay, not a genesis file (see its
         # _comment), and is covered by the genesis-sync job instead.
         run: |
-          files=""
-          for f in networks/*/genesis.json networks/mainnet/genesis-DRAFT.json; do
-            if [ -f "$f" ]; then
-              files="$files $f"
-            fi
-          done
-          if [ -z "$files" ]; then
+          shopt -s nullglob
+          files=(networks/*/genesis.json networks/*/genesis-DRAFT.json)
+          if [ ${#files[@]} -eq 0 ]; then
             echo "::error::no complete genesis file matched - this check must never pass vacuously" >&2
             exit 1
           fi
-          for f in $files; do
+          status=0
+          for f in "${files[@]}"; do
             echo "Validating $f ..."
-            ./build/arkd genesis validate-genesis "$f"
+            if ! ./build/arkd genesis validate-genesis "$f"; then
+              echo "::error::genesis validation failed for $f" >&2
+              status=1
+            fi
           done
+          exit $status
 
   genesis-sync:
     runs-on: ubuntu-latest
