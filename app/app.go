@@ -54,6 +54,7 @@ import (
 	queries "github.com/MANTRA-Chain/mantrachain/v8/app/queries"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_4"
+	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_5"
 	"github.com/MANTRA-Chain/mantrachain/v8/client/docs"
 	govtimelock "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
 	govtimelockkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
@@ -236,7 +237,7 @@ var maccPerms = map[string][]string{
 	erc20types.ModuleName:     {authtypes.Minter, authtypes.Burner},
 }
 
-var Upgrades = []upgrades.Upgrade{v8_4.Upgrade}
+var Upgrades = []upgrades.Upgrade{v8_4.Upgrade, v8_5.Upgrade}
 
 var (
 	_ runtime.AppI            = (*App)(nil)
@@ -859,7 +860,7 @@ func New(
 			&app.GovKeeper,
 			app.GovTimelockKeeper,
 		),
-		govtimelock.NewAppModule(app.GovTimelockKeeper),
+		govtimelock.NewAppModule(app.GovTimelockKeeper, &app.GovKeeper),
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, nil),
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, nil, app.interfaceRegistry),
 		distr.NewAppModule(appCodec, app.DistrKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, nil),
@@ -1449,6 +1450,7 @@ func (app *App) setupUpgradeHandlers() {
 					DistrKeeper:           app.DistrKeeper,
 					ProviderKeeper:        app.ProviderKeeper,
 					ConsensusParamsKeeper: app.ConsensusParamsKeeper,
+					GovTimelockKeeper:     &app.GovTimelockKeeper,
 				},
 				app.keys,
 			),

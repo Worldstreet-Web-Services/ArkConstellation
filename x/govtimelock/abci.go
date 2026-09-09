@@ -25,15 +25,41 @@ const (
 // EndBlocker retains the stock x/gov tally behavior but schedules passed
 // proposal messages for atomic execution after delay instead of executing
 // them in the voting-period end block.
+//
+// Status semantics caveat: a scheduled proposal is set to
+// PROPOSAL_STATUS_PASSED at tally time, which the SDK documents as "passed and
+// successfully executed". Under the timelock that enum value additionally
+// covers the pending-execution window — up to the configured delay during which
+// the proposal has passed but its messages have NOT run. Off-the-shelf
+// consumers (indexers, explorers, wallets, and other chains reading v1 status
+// over IBC/ICS) will report such a proposal as executed for the whole window.
+// Consumers that need to distinguish the two states must watch the
+// proposal_scheduled and proposal_executed events this module emits; only those
+// events separate "scheduled" from "executed". Introducing a new status value
+// would be the cleaner fix but is a v1 wire-format break, so it is deliberately
+// not done here — see docs/proof/gov-timelock.md.
 func EndBlocker(ctx sdk.Context, govKeeper *govkeeper.Keeper, timelockKeeper keeper.Keeper, delay time.Duration) error {
 	defer telemetry.ModuleMeasureSince(govtypes.ModuleName, telemetry.Now(), telemetry.MetricKeyEndBlocker)
 
 	logger := ctx.Logger().With("module", "x/"+govtypes.ModuleName)
+
+	// The timelock is a consensus-behavior change, so it must only engage at the
+	// coordinated upgrade height recorded by the v8.5.0 handler. Before that
+	// height every node — old binary or new — runs stock x/gov execution
+	// semantics, which is what keeps a plain binary swap from forking the chain.
+	active, err := timelockKeeper.IsActive(ctx, ctx.BlockHeight())
+	if err != nil {
+		return err
+	}
+
 	if err := processInactiveProposals(ctx, govKeeper, logger); err != nil {
 		return err
 	}
-	if err := processEndedVotingPeriods(ctx, govKeeper, timelockKeeper, delay, logger); err != nil {
+	if err := processEndedVotingPeriods(ctx, govKeeper, timelockKeeper, delay, logger, active); err != nil {
 		return err
+	}
+	if !active {
+		return nil
 	}
 	return executeMaturedProposals(ctx, govKeeper, timelockKeeper, logger)
 }
@@ -107,6 +133,7 @@ func processEndedVotingPeriods(
 	timelockKeeper keeper.Keeper,
 	delay time.Duration,
 	logger log.Logger,
+	active bool,
 ) error {
 	rng := collections.NewPrefixUntilPairRange[time.Time, uint64](ctx.BlockTime())
 	iter, err := govKeeper.ActiveProposalsQueue.Iterate(ctx, rng)
@@ -153,7 +180,11 @@ func processEndedVotingPeriods(
 		}
 
 		var tagValue, logMsg string
+		scheduledForLater := false
 		switch {
+		case passes && !active:
+			// Pre-activation: stock x/gov semantics — execute in this block.
+			proposal, tagValue, logMsg = executeProposal(ctx, govKeeper, proposal, logger)
 		case passes:
 			executionTime := ctx.BlockTime().Add(delay)
 			if err := timelockKeeper.Schedule(ctx, proposal.Id, executionTime); err != nil {
@@ -163,6 +194,7 @@ func processEndedVotingPeriods(
 			proposal.FailedReason = ""
 			tagValue = govtypes.AttributeValueProposalPassed
 			logMsg = fmt.Sprintf("passed; execution scheduled for %s", executionTime.UTC().Format(time.RFC3339Nano))
+			scheduledForLater = true
 			ctx.EventManager().EmitEvent(sdk.NewEvent(
 				eventTypeProposalScheduled,
 				sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
@@ -193,12 +225,12 @@ func processEndedVotingPeriods(
 			return err
 		}
 
-		cacheCtx, writeCache := ctx.CacheContext()
-		err = govKeeper.Hooks().AfterProposalVotingPeriodEnded(cacheCtx, proposal.Id)
-		if err == nil {
-			writeCache()
-		} else {
-			govKeeper.Logger(ctx).Error("failed to execute AfterProposalVotingPeriodEnded hook", "error", err)
+		// AfterProposalVotingPeriodEnded fires here for every outcome except a
+		// scheduled proposal. Stock x/gov fires it only after the proposal's
+		// messages have run, so for the timelocked path it is deferred to
+		// executeMaturedProposals to preserve that ordering for hook consumers.
+		if !scheduledForLater {
+			runVotingPeriodEndedHook(ctx, govKeeper, proposal.Id)
 		}
 
 		logger.Info("proposal tallied", "proposal", proposal.Id, "results", logMsg)
@@ -218,49 +250,62 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 		return err
 	}
 	for _, scheduled := range due {
+		// A single malformed or unexpected scheduled entry must never abort
+		// EndBlock: returning an error here is fatal for the block, and because
+		// the entry is only dropped by the Remove below, it would still be due
+		// on every subsequent block — a permanent chain halt. Mirror the
+		// per-proposal recovery the sibling loops in this file already use:
+		// drop the offending entry and carry on with the rest.
 		proposal, err := govKeeper.Proposals.Get(ctx, scheduled.ProposalID)
 		if err != nil {
-			return err
+			logger.Error(
+				"dropping scheduled proposal that could not be loaded",
+				"proposal", scheduled.ProposalID,
+				"error", err,
+			)
+			if err := timelockKeeper.Remove(ctx, scheduled.ExecutionTime, scheduled.ProposalID); err != nil {
+				return err
+			}
+			ctx.EventManager().EmitEvent(sdk.NewEvent(
+				eventTypeProposalExecuted,
+				sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", scheduled.ProposalID)),
+				sdk.NewAttribute(govtypes.AttributeKeyProposalResult, govtypes.AttributeValueProposalFailed),
+				sdk.NewAttribute(govtypes.AttributeKeyProposalLog, "scheduled proposal could not be loaded"),
+			))
+			continue
 		}
 		if proposal.Status != govv1.StatusPassed {
-			return fmt.Errorf("scheduled proposal %d has unexpected status %s", proposal.Id, proposal.Status.String())
+			// Something outside this module moved the proposal off StatusPassed
+			// during the delay window. Executing it now would be wrong, so drop
+			// the schedule and leave the proposal record as-is.
+			logger.Error(
+				"dropping scheduled proposal with unexpected status",
+				"proposal", proposal.Id,
+				"status", proposal.Status.String(),
+			)
+			if err := timelockKeeper.Remove(ctx, scheduled.ExecutionTime, scheduled.ProposalID); err != nil {
+				return err
+			}
+			ctx.EventManager().EmitEvent(sdk.NewEvent(
+				eventTypeProposalExecuted,
+				sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
+				sdk.NewAttribute(govtypes.AttributeKeyProposalResult, govtypes.AttributeValueProposalFailed),
+				sdk.NewAttribute(govtypes.AttributeKeyProposalLog, fmt.Sprintf("unexpected status %s at execution time", proposal.Status.String())),
+			))
+			continue
 		}
 
-		cacheCtx, writeCache := ctx.CacheContext()
-		messages, err := proposal.GetMsgs()
-		if err == nil {
-			var events sdk.Events
-			for idx, msg := range messages {
-				handler := govKeeper.Router().Handler(msg)
-				res, execErr := safeExecuteHandler(cacheCtx, msg, handler)
-				if execErr != nil {
-					err = fmt.Errorf("message %d (%s): %w", idx, sdk.MsgTypeURL(msg), execErr)
-					break
-				}
-				events = append(events, res.GetEvents()...)
-			}
-			if err == nil {
-				writeCache()
-				ctx.EventManager().EmitEvents(events)
-			}
-		}
+		proposal, result, _ := executeProposal(ctx, govKeeper, proposal, logger)
 
-		result := govtypes.AttributeValueProposalPassed
-		if err != nil {
-			proposal.Status = govv1.StatusFailed
-			proposal.FailedReason = err.Error()
-			result = govtypes.AttributeValueProposalFailed
-			logger.Error("timelocked proposal failed to execute", "proposal", proposal.Id, "error", err)
-		} else {
-			proposal.FailedReason = ""
-			logger.Info("timelocked proposal executed", "proposal", proposal.Id)
-		}
 		if err := govKeeper.SetProposal(ctx, proposal); err != nil {
 			return err
 		}
 		if err := timelockKeeper.Remove(ctx, scheduled.ExecutionTime, scheduled.ProposalID); err != nil {
 			return err
 		}
+		// Deferred from processEndedVotingPeriods so hook consumers observe the
+		// same "fires after execution" ordering stock x/gov gives them.
+		runVotingPeriodEndedHook(ctx, govKeeper, proposal.Id)
 		ctx.EventManager().EmitEvent(sdk.NewEvent(
 			eventTypeProposalExecuted,
 			sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
@@ -268,6 +313,53 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 		))
 	}
 	return nil
+}
+
+// runVotingPeriodEndedHook invokes the governance hook against a cache context,
+// keeping a failing hook from aborting the block — matching stock x/gov.
+func runVotingPeriodEndedHook(ctx sdk.Context, govKeeper *govkeeper.Keeper, proposalID uint64) {
+	cacheCtx, writeCache := ctx.CacheContext()
+	if err := govKeeper.Hooks().AfterProposalVotingPeriodEnded(cacheCtx, proposalID); err == nil {
+		writeCache()
+	} else {
+		govKeeper.Logger(ctx).Error("failed to execute AfterProposalVotingPeriodEnded hook", "error", err)
+	}
+}
+
+// executeProposal runs a passed proposal's messages atomically against a cache
+// context, writing state only if every message succeeds. Shared by the
+// pre-activation (stock semantics) and post-activation (timelocked) paths so
+// the two cannot drift apart.
+func executeProposal(ctx sdk.Context, govKeeper *govkeeper.Keeper, proposal govv1.Proposal, logger log.Logger) (govv1.Proposal, string, string) {
+	cacheCtx, writeCache := ctx.CacheContext()
+	messages, err := proposal.GetMsgs()
+	if err == nil {
+		var events sdk.Events
+		for idx, msg := range messages {
+			handler := govKeeper.Router().Handler(msg)
+			res, execErr := safeExecuteHandler(cacheCtx, msg, handler)
+			if execErr != nil {
+				err = fmt.Errorf("message %d (%s): %w", idx, sdk.MsgTypeURL(msg), execErr)
+				break
+			}
+			events = append(events, res.GetEvents()...)
+		}
+		if err == nil {
+			writeCache()
+			ctx.EventManager().EmitEvents(events)
+		}
+	}
+
+	if err != nil {
+		proposal.Status = govv1.StatusFailed
+		proposal.FailedReason = err.Error()
+		logger.Error("proposal failed to execute", "proposal", proposal.Id, "error", err)
+		return proposal, govtypes.AttributeValueProposalFailed, "passed, but failed on execution: " + err.Error()
+	}
+	proposal.Status = govv1.StatusPassed
+	proposal.FailedReason = ""
+	logger.Info("proposal executed", "proposal", proposal.Id)
+	return proposal, govtypes.AttributeValueProposalPassed, "passed"
 }
 
 func safeExecuteHandler(ctx sdk.Context, msg sdk.Msg, handler baseapp.MsgServiceHandler) (res *sdk.Result, err error) {

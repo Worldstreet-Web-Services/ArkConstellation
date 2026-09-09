@@ -16,10 +16,14 @@ func TestGenesisValidation(t *testing.T) {
 		wantErr string
 	}{
 		{name: "empty", state: types.DefaultGenesis()},
-		{name: "valid", state: types.GenesisState{ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1, ExecutionTime: now}}}},
-		{name: "zero proposal ID", state: types.GenesisState{ScheduledProposals: []types.ScheduledProposal{{ExecutionTime: now}}}, wantErr: "must be positive"},
-		{name: "zero execution time", state: types.GenesisState{ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1}}}, wantErr: "zero execution time"},
-		{name: "duplicate proposal", state: types.GenesisState{ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1, ExecutionTime: now}, {ProposalID: 1, ExecutionTime: now.Add(time.Hour)}}}, wantErr: "more than once"},
+		{name: "valid", state: types.GenesisState{ActivationHeight: 1, ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1, ExecutionTime: now}}}},
+		{name: "zero proposal ID", state: types.GenesisState{ActivationHeight: 1, ScheduledProposals: []types.ScheduledProposal{{ExecutionTime: now}}}, wantErr: "must be positive"},
+		{name: "zero execution time", state: types.GenesisState{ActivationHeight: 1, ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1}}}, wantErr: "zero execution time"},
+		{name: "duplicate proposal", state: types.GenesisState{ActivationHeight: 1, ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1, ExecutionTime: now}, {ProposalID: 1, ExecutionTime: now.Add(time.Hour)}}}, wantErr: "more than once"},
+		{name: "default genesis activates from first block", state: types.DefaultGenesis()},
+		{name: "negative activation height", state: types.GenesisState{ActivationHeight: -1}, wantErr: "must not be negative"},
+		{name: "inactive with schedules", state: types.GenesisState{ActivationHeight: 0, ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1, ExecutionTime: now}}}, wantErr: "timelock is inactive"},
+		{name: "inactive and empty is valid for an upgrading chain", state: types.GenesisState{ActivationHeight: 0}},
 	}
 
 	for _, tc := range tests {

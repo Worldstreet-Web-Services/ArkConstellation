@@ -30,12 +30,15 @@ type SuiteConfig struct {
 }
 
 const (
-	CommitTimeout          = 4 * time.Second
-	Amantra                = "amantra"
-	GovMinDepositAmount    = 1000000000000000
-	GovDepositAmount       = "5000000000000000000" + Amantra
-	GovDepositPeriod       = 60 * time.Second
-	GovVotingPeriod        = 40 * time.Second
+	CommitTimeout       = 4 * time.Second
+	Amantra             = "amantra"
+	GovMinDepositAmount = 1000000000000000
+	GovDepositAmount    = "5000000000000000000" + Amantra
+	GovDepositPeriod    = 60 * time.Second
+	GovVotingPeriod     = 40 * time.Second
+	// GovExecutionDelay shortens x/govtimelock's 48h production delay so
+	// governance tests can assert post-execution effects.
+	GovExecutionDelay      = 5 * time.Second
 	DowntimeJailDuration   = 10 * time.Second
 	ProviderSlashingWindow = 10
 	GasPrices              = "10000000000" + Amantra
@@ -152,6 +155,10 @@ func DefaultConfigToml() testutil.Toml {
 func DefaultGenesis() []cosmos.GenesisKV {
 	return []cosmos.GenesisKV{
 		cosmos.NewGenesisKV("app_state.gov.params.voting_period", GovVotingPeriod.String()),
+		// x/govtimelock defers proposal execution by 48h in production. These
+		// tests pass a proposal and immediately assert its messages ran, so the
+		// delay is shortened here to match the shortened voting period.
+		cosmos.NewGenesisKV("app_state.govtimelock.execution_delay", GovExecutionDelay.Nanoseconds()),
 		cosmos.NewGenesisKV("app_state.gov.params.max_deposit_period", GovDepositPeriod.String()),
 		cosmos.NewGenesisKV("app_state.gov.params.min_deposit.0.denom", Amantra),
 		cosmos.NewGenesisKV("app_state.gov.params.min_deposit.0.amount", strconv.Itoa(GovMinDepositAmount)),

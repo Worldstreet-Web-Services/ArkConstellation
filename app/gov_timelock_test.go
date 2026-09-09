@@ -1,10 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	govtimelock "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
+	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -20,6 +22,7 @@ func TestGovernanceTimelockExecutesOnlyAtBoundary(t *testing.T) {
 	chain := SetupWithEmptyStore(t)
 	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
 	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+	activateTimelock(t, chain, ctx)
 
 	original := banktypes.DefaultParams()
 	require.NoError(t, chain.BankKeeper.SetParams(ctx, original))
@@ -49,6 +52,7 @@ func TestGovernanceTimelockPreservesAtomicExecution(t *testing.T) {
 	chain := SetupWithEmptyStore(t)
 	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
 	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+	activateTimelock(t, chain, ctx)
 
 	original := banktypes.DefaultParams()
 	require.NoError(t, chain.BankKeeper.SetParams(ctx, original))
@@ -71,6 +75,13 @@ func TestGovernanceTimelockPreservesAtomicExecution(t *testing.T) {
 	require.NotEmpty(t, stored.FailedReason)
 }
 
+// activateTimelock marks the execution timelock active from the context's
+// height, standing in for the coordinated v8.5.0 upgrade handler.
+func activateTimelock(t *testing.T, chain *App, ctx sdk.Context) {
+	t.Helper()
+	require.NoError(t, chain.GovTimelockKeeper.SetActivationHeight(ctx, ctx.BlockHeight()))
+}
+
 func makePassedProposal(t *testing.T, msg sdk.Msg, id uint64, now time.Time) govv1.Proposal {
 	t.Helper()
 	return makePassedProposalWithMessages(t, []sdk.Msg{msg}, id, now)
@@ -82,4 +93,213 @@ func makePassedProposalWithMessages(t *testing.T, msgs []sdk.Msg, id uint64, now
 	require.NoError(t, err)
 	proposal.Status = govv1.StatusPassed
 	return proposal
+}
+
+// TestGovernanceTimelockDoesNotHaltOnMissingProposal covers the chain-halt
+// class: a scheduled entry whose gov record is absent must not abort EndBlock.
+// Before the per-entry recovery, this returned an error out of EndBlock — and
+// because the entry was never removed it stayed due on every later block, so
+// the halt was permanent rather than a single bad block.
+func TestGovernanceTimelockDoesNotHaltOnMissingProposal(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+	activateTimelock(t, chain, ctx)
+
+	// Schedule a proposal that does not exist in x/gov.
+	require.NoError(t, chain.GovTimelockKeeper.Schedule(ctx, 4242, start))
+
+	require.NoError(t, govtimelock.EndBlocker(ctx, &chain.GovKeeper, chain.GovTimelockKeeper, govtimelock.MinimumDelay))
+
+	// The bad entry must be gone, so the next block is unaffected.
+	due, err := chain.GovTimelockKeeper.Due(ctx, ctx.BlockTime())
+	require.NoError(t, err)
+	require.Empty(t, due, "bad entry must be dropped, otherwise it halts every subsequent block")
+
+	next := ctx.WithBlockTime(start.Add(time.Minute))
+	require.NoError(t, govtimelock.EndBlocker(next, &chain.GovKeeper, chain.GovTimelockKeeper, govtimelock.MinimumDelay))
+}
+
+// TestGovernanceTimelockDoesNotHaltOnUnexpectedStatus covers the sibling case:
+// a scheduled proposal whose status moved off StatusPassed during the delay
+// window must be dropped, not executed, and must not abort EndBlock.
+func TestGovernanceTimelockDoesNotHaltOnUnexpectedStatus(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+	activateTimelock(t, chain, ctx)
+
+	original := banktypes.DefaultParams()
+	require.NoError(t, chain.BankKeeper.SetParams(ctx, original))
+	updated := original
+	updated.DefaultSendEnabled = !original.DefaultSendEnabled
+
+	proposal := makePassedProposal(t, &banktypes.MsgUpdateParams{
+		Authority: authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		Params:    updated,
+	}, 79, start)
+	proposal.Status = govv1.StatusRejected
+	require.NoError(t, chain.GovKeeper.SetProposal(ctx, proposal))
+	require.NoError(t, chain.GovTimelockKeeper.Schedule(ctx, proposal.Id, start))
+
+	require.NoError(t, govtimelock.EndBlocker(ctx, &chain.GovKeeper, chain.GovTimelockKeeper, govtimelock.MinimumDelay))
+
+	// Messages must NOT have run for a non-passed proposal.
+	require.Equal(t, original.DefaultSendEnabled, chain.BankKeeper.GetParams(ctx).DefaultSendEnabled)
+
+	due, err := chain.GovTimelockKeeper.Due(ctx, ctx.BlockTime())
+	require.NoError(t, err)
+	require.Empty(t, due)
+}
+
+// TestGovernanceTimelockInertBeforeActivation is the consensus-safety gate: on
+// a chain that has not run the v8.5.0 upgrade, a passed proposal must execute
+// immediately with stock x/gov semantics. Without this, a node running the new
+// binary would defer execution while an un-upgraded peer executed at once —
+// an immediate AppHash divergence.
+func TestGovernanceTimelockInertBeforeActivation(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+	// Deliberately no activateTimelock: this chain has not upgraded.
+
+	active, err := chain.GovTimelockKeeper.IsActive(ctx, ctx.BlockHeight())
+	require.NoError(t, err)
+	require.False(t, active, "timelock must be inert until the upgrade handler runs")
+
+	// A scheduled entry that is already due must be left untouched while
+	// inactive, rather than executed by the new binary ahead of its peers.
+	require.NoError(t, chain.GovTimelockKeeper.Schedule(ctx, 4243, start))
+	require.NoError(t, govtimelock.EndBlocker(ctx, &chain.GovKeeper, chain.GovTimelockKeeper, govtimelock.MinimumDelay))
+
+	due, err := chain.GovTimelockKeeper.Due(ctx, ctx.BlockTime())
+	require.NoError(t, err)
+	require.Len(t, due, 1, "pre-activation EndBlocker must not consume scheduled entries")
+}
+
+// TestGovernanceTimelockActivatesAtHeight confirms the gate flips exactly at
+// the recorded activation height and not before.
+func TestGovernanceTimelockActivatesAtHeight(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+
+	require.NoError(t, chain.GovTimelockKeeper.SetActivationHeight(ctx, 100))
+
+	active, err := chain.GovTimelockKeeper.IsActive(ctx, 99)
+	require.NoError(t, err)
+	require.False(t, active)
+
+	active, err = chain.GovTimelockKeeper.IsActive(ctx, 100)
+	require.NoError(t, err)
+	require.True(t, active)
+
+	active, err = chain.GovTimelockKeeper.IsActive(ctx, 101)
+	require.NoError(t, err)
+	require.True(t, active)
+}
+
+// TestGovTimelockGenesisRejectsUnscheduledPassedProposal covers the genesis
+// cross-module invariant that types.GenesisState.Validate structurally cannot
+// see: a PROPOSAL_STATUS_PASSED proposal in x/gov with no matching schedule
+// would otherwise be stranded forever, its messages never executing.
+func TestGovTimelockGenesisRejectsUnscheduledPassedProposal(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+
+	proposal := makePassedProposal(t, &banktypes.MsgUpdateParams{
+		Authority: authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		Params:    banktypes.DefaultParams(),
+	}, 91, start)
+	require.NoError(t, chain.GovKeeper.SetProposal(ctx, proposal))
+
+	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	empty, err := json.Marshal(govtimelocktypes.DefaultGenesis())
+	require.NoError(t, err)
+
+	require.PanicsWithError(t,
+		"x/gov proposal 91 is PROPOSAL_STATUS_PASSED but has no govtimelock schedule; its messages would never execute",
+		func() { module.InitGenesis(ctx, chain.AppCodec(), empty) },
+	)
+}
+
+// TestGovTimelockGenesisRejectsDanglingSchedule covers the inverse mismatch: a
+// scheduled entry naming a proposal x/gov does not have. Left unchecked this is
+// exactly the entry that reaches executeMaturedProposals and, before the
+// per-entry recovery, halted the chain.
+func TestGovTimelockGenesisRejectsDanglingSchedule(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+
+	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	state, err := json.Marshal(govtimelocktypes.GenesisState{
+		ScheduledProposals: []govtimelocktypes.ScheduledProposal{{ProposalID: 92, ExecutionTime: start}},
+	})
+	require.NoError(t, err)
+
+	require.Panics(t, func() { module.InitGenesis(ctx, chain.AppCodec(), state) })
+}
+
+// TestGovTimelockGenesisAcceptsMatchedPair confirms a consistent genesis still
+// initializes cleanly.
+func TestGovTimelockGenesisAcceptsMatchedPair(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+
+	proposal := makePassedProposal(t, &banktypes.MsgUpdateParams{
+		Authority: authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		Params:    banktypes.DefaultParams(),
+	}, 93, start)
+	require.NoError(t, chain.GovKeeper.SetProposal(ctx, proposal))
+
+	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	state, err := json.Marshal(govtimelocktypes.GenesisState{
+		ScheduledProposals: []govtimelocktypes.ScheduledProposal{{ProposalID: 93, ExecutionTime: start.Add(48 * time.Hour)}},
+	})
+	require.NoError(t, err)
+
+	require.NotPanics(t, func() { module.InitGenesis(ctx, chain.AppCodec(), state) })
+
+	scheduled, err := chain.GovTimelockKeeper.Export(ctx)
+	require.NoError(t, err)
+	require.Len(t, scheduled, 1)
+	require.Equal(t, uint64(93), scheduled[0].ProposalID)
+}
+
+// TestGovTimelockActiveOnFreshChain guards the case the activation gate could
+// otherwise regress: a brand-new chain must have the timelock ON from genesis.
+// Only the upgrade handler sets the activation height for an existing chain, so
+// without DefaultGenesis activating at height 1 a fresh mainnet would silently
+// run with no timelock at all.
+func TestGovTimelockActiveOnFreshChain(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+
+	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	module.InitGenesis(ctx, chain.AppCodec(), module.DefaultGenesis(chain.AppCodec()))
+
+	active, err := chain.GovTimelockKeeper.IsActive(ctx, 1)
+	require.NoError(t, err)
+	require.True(t, active, "a chain starting from genesis must have the timelock active")
+}
+
+// TestGovTimelockGenesisRoundTrip ensures the activation height survives an
+// export/import cycle, so a state-exported chain does not silently lose it.
+func TestGovTimelockGenesisRoundTrip(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
+
+	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	require.NoError(t, chain.GovTimelockKeeper.SetActivationHeight(ctx, 500))
+
+	exported := module.ExportGenesis(ctx, chain.AppCodec())
+	var state govtimelocktypes.GenesisState
+	require.NoError(t, json.Unmarshal(exported, &state))
+	require.Equal(t, int64(500), state.ActivationHeight)
+	require.NoError(t, state.Validate())
 }

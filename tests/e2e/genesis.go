@@ -18,6 +18,8 @@ import (
 	govlegacytypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
+
+	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 )
 
 func modifyGenesis(path, moniker, amountStr string, addrAll []sdk.AccAddress, basefee string, denom string) error {
@@ -130,6 +132,18 @@ func modifyGenesis(path, moniker, amountStr string, addrAll []sdk.AccAddress, ba
 		return fmt.Errorf("failed to marshal gov genesis state: %w", err)
 	}
 	appState[govtypes.ModuleName] = govGenStateBz
+
+	// x/govtimelock defers proposal execution by 48h in production. These tests
+	// assert post-execution effects within seconds, so shorten the delay to
+	// match the shortened voting periods above; without this every governance
+	// e2e test would time out waiting for messages that only run two days later.
+	govTimelockGenState := govtimelocktypes.DefaultGenesis()
+	govTimelockGenState.ExecutionDelay = 5 * time.Second
+	govTimelockGenStateBz, err := json.Marshal(govTimelockGenState)
+	if err != nil {
+		return fmt.Errorf("failed to marshal govtimelock genesis state: %w", err)
+	}
+	appState[govtimelocktypes.ModuleName] = govTimelockGenStateBz
 
 	feemarketGenState := feemarkettypes.DefaultGenesisState()
 	feemarketGenState.Params.MinGasPrice = math.LegacyMustNewDecFromStr(basefee)

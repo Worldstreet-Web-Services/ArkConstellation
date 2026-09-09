@@ -9,6 +9,8 @@ import (
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	icsproviderkeeper "github.com/cosmos/interchain-security/v7/x/ccv/provider/keeper"
+
+	govtimelockkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
 )
 
 // Upgrade defines a struct containing necessary fields that a SoftwareUpgradeProposal
@@ -48,4 +50,7 @@ type UpgradeKeepers struct {
 	// provider
 	ProviderKeeper        icsproviderkeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
+	// GovTimelockKeeper is set for upgrades that activate the governance
+	// execution timelock; nil for upgrades that do not touch it.
+	GovTimelockKeeper *govtimelockkeeper.Keeper
 }

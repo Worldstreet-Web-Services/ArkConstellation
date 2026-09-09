@@ -16,6 +16,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	gov "github.com/cosmos/cosmos-sdk/x/gov"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 )
 
@@ -57,11 +58,12 @@ func (AppModuleBasic) ValidateGenesis(_ codec.JSONCodec, _ client.TxEncodingConf
 
 type AppModule struct {
 	AppModuleBasic
-	keeper keeper.Keeper
+	keeper    keeper.Keeper
+	govKeeper *govkeeper.Keeper
 }
 
-func NewAppModule(k keeper.Keeper) AppModule {
-	return AppModule{keeper: k}
+func NewAppModule(k keeper.Keeper, govKeeper *govkeeper.Keeper) AppModule {
+	return AppModule{keeper: k, govKeeper: govKeeper}
 }
 
 func (AppModule) IsOnePerModuleType()      {}
@@ -73,11 +75,76 @@ func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, bz json.RawM
 	if err := json.Unmarshal(bz, &state); err != nil {
 		panic(err)
 	}
+	// GenesisState.Validate cannot see x/gov's state, so the cross-module
+	// invariants are checked here where both stores are available. Failing at
+	// InitGenesis is the right place for this: a mismatch that slipped through
+	// would otherwise surface as a stranded proposal or a dropped schedule at
+	// EndBlock, long after the operator could act on it.
+	if am.govKeeper != nil {
+		if err := am.validateAgainstGov(ctx, state); err != nil {
+			panic(err)
+		}
+	}
 	for _, scheduled := range state.ScheduledProposals {
 		if err := am.keeper.Schedule(ctx, scheduled.ProposalID, scheduled.ExecutionTime); err != nil {
 			panic(err)
 		}
 	}
+	// Height 0 means "not activated at genesis" — an existing chain that will
+	// activate via the coordinated upgrade handler instead.
+	if state.ActivationHeight > 0 {
+		if err := am.keeper.SetActivationHeight(ctx, state.ActivationHeight); err != nil {
+			panic(err)
+		}
+	}
+	if state.ExecutionDelay > 0 {
+		if err := am.keeper.SetExecutionDelay(ctx, state.ExecutionDelay); err != nil {
+			panic(err)
+		}
+	}
+}
+
+// validateAgainstGov enforces the two cross-module invariants that
+// types.GenesisState.Validate structurally cannot: every scheduled entry must
+// name a proposal that exists in x/gov and is StatusPassed, and every passed
+// proposal in x/gov must have a corresponding scheduled entry (otherwise its
+// messages would never execute).
+func (am AppModule) validateAgainstGov(ctx sdk.Context, state types.GenesisState) error {
+	scheduledIDs := make(map[uint64]struct{}, len(state.ScheduledProposals))
+	for _, scheduled := range state.ScheduledProposals {
+		scheduledIDs[scheduled.ProposalID] = struct{}{}
+
+		proposal, err := am.govKeeper.Proposals.Get(ctx, scheduled.ProposalID)
+		if err != nil {
+			return fmt.Errorf(
+				"%s genesis schedules proposal %d, which does not exist in x/gov: %w",
+				types.ModuleName, scheduled.ProposalID, err,
+			)
+		}
+		if proposal.Status != govv1.StatusPassed {
+			return fmt.Errorf(
+				"%s genesis schedules proposal %d with status %s, expected %s",
+				types.ModuleName, scheduled.ProposalID, proposal.Status.String(), govv1.StatusPassed.String(),
+			)
+		}
+	}
+
+	err := am.govKeeper.Proposals.Walk(ctx, nil, func(id uint64, proposal govv1.Proposal) (bool, error) {
+		if proposal.Status != govv1.StatusPassed {
+			return false, nil
+		}
+		if _, ok := scheduledIDs[id]; !ok {
+			return true, fmt.Errorf(
+				"x/gov proposal %d is %s but has no %s schedule; its messages would never execute",
+				id, proposal.Status.String(), types.ModuleName,
+			)
+		}
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (am AppModule) ExportGenesis(ctx sdk.Context, _ codec.JSONCodec) json.RawMessage {
@@ -85,7 +152,19 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, _ codec.JSONCodec) json.RawMe
 	if err != nil {
 		panic(err)
 	}
-	bz, err := json.Marshal(types.GenesisState{ScheduledProposals: scheduled})
+	activationHeight, err := am.keeper.GetActivationHeight(ctx)
+	if err != nil {
+		panic(err)
+	}
+	executionDelay, err := am.keeper.GetExecutionDelay(ctx, MinimumDelay)
+	if err != nil {
+		panic(err)
+	}
+	bz, err := json.Marshal(types.GenesisState{
+		ScheduledProposals: scheduled,
+		ActivationHeight:   activationHeight,
+		ExecutionDelay:     executionDelay,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -111,5 +190,10 @@ func NewGovAppModule(base gov.AppModule, govKeeper *govkeeper.Keeper, timelockKe
 }
 
 func (am GovAppModule) EndBlock(ctx context.Context) error {
-	return EndBlocker(sdk.UnwrapSDKContext(ctx), am.govKeeper, am.timelockKeeper, am.delay)
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	delay, err := am.timelockKeeper.GetExecutionDelay(sdkCtx, am.delay)
+	if err != nil {
+		return err
+	}
+	return EndBlocker(sdkCtx, am.govKeeper, am.timelockKeeper, delay)
 }
