@@ -29,7 +29,7 @@ replace (
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/cometbft/cometbft v0.38.23
-	github.com/cosmos/cosmos-sdk v0.53.4
+	github.com/cosmos/cosmos-sdk v0.53.8
 	github.com/cosmos/ibc-go/v10 v10.5.1
 	github.com/docker/docker v27.1.2+incompatible
 	github.com/google/go-github/v62 v62.0.0

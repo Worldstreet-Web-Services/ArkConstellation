@@ -6,6 +6,24 @@
 - Ran a real recursive `diff -rq` across both trees, then full unified diffs on every differing file.
 - Separately diffed upstream `v0.53.6..v0.53.8` (latest released v0.53.x) and `v0.53.8..origin/release/v0.53.x` (unreleased tip) to answer the drift/security question.
 
+### Re-audit at the remediated pin (`v0.53.8-v8-mantra-1`)
+After the advisory remediation re-pinned the SDK, the diff was **re-run against the new tag** so the audit covers the artifact that is actually built:
+- Shallow-cloned `MANTRA-Chain/cosmos-sdk` at tag `v0.53.8-v8-mantra-1` and `cosmos/cosmos-sdk` at tag `v0.53.8` (again an exact matching upstream tag, so a precise diff).
+- Confirmed the fork tag resolves to commit `58cc2eb4a66fcab2359a69d262b984958c8d9273`, matching both the `go.mod` replace directive and the `cosmossdk.io/api` pseudo-version `v0.0.0-20260729035606-58cc2eb4a66f`.
+- Ran a full recursive `diff -rq` across both trees: **44 differing entries**, of which the non-generated Go source differences are exactly `x/bank/keeper/{keeper,send}.go`, `x/bank/types/expected_keepers.go`, `x/mint/{keeper/migrator.go,keeper/mint.go,module.go,simulation/genesis.go,types/expected_keepers.go,types/params.go}`, `x/auth/tx/query.go`, `x/gov/types/config.go`, and `tests/e2e/mint/grpc.go`.
+- **The divergence set is unchanged from the v0.53.6 audit** — the same two functional features plus the same query-path change and typo fix. No new divergence was introduced by the fork's rebase onto v0.53.8.
+- Confirmed **no divergence** in `crypto/`, ante handlers, `baseapp`, `x/staking`, `x/distribution`, `x/slashing`, or `x/evidence` — the consensus-critical core outside bank/mint remains untouched at the new tag.
+- Verified the MANTRA fork features survive the bump: `x/bank/types/hooks.go`, `SendCoinsWithoutBlockHook` (`x/bank/keeper/send.go:251`), `x/mint` `MaxSupply` (`x/mint/types/params.go`), and `RegisterMigration(..., 2, m.Migrate2to3)` (`x/mint/module.go:131`) are all present.
+- Re-confirmed `x/auth/tx/query.go`'s `formatTxResults` still carries the silent-drop behavior described in §2 (upstream returns an error; the fork appends only successfully-decoded results).
+
+### CometBFT bump carried by this re-pin
+The SDK re-pin also moved CometBFT from the pseudo-version `v0.38.23-0.20260422215035-4928b26fd5ba` to the released tag `v0.38.23`. Verified this is a **strict fast-forward, not a downgrade**: commit `4928b26fd5ba` is an ancestor of `v0.38.23` (5 commits ahead, 0 behind). The intervening commits are:
+- `20818d7d2` — `fix(light): stop witness comparison after divergence checks` (light-client detector).
+- `5acce5a40` — `fix(abci): prevent panic on unlock in socket server panic recovery`.
+- `a82d977a1` — test-only flaky-test fix; plus two changelog commits.
+
+Both functional commits are bug fixes in the safe direction for a consensus node; no regression.
+
 ## Scale
 The fork touches **~40 files total**, and it is *not* a sprawling fork — it clusters into exactly two functional changes plus repo/CI housekeeping:
 1. A new **bank module "BeforeSend hooks"** system (Osmosis-style `TrackBeforeSend`/`BlockBeforeSend`) — 9 files.
@@ -84,4 +102,4 @@ Most of these are **panic/DoS-class bugs reachable via a crafted transaction or 
 
 ## Verdict
 
-This fork is well-scoped: its functional differences from upstream are confined to two clearly documented, tested features (bank pre-send hooks that are a no-op unless wired, and a mint max-supply cap with a proper migration), plus repository/CI customization. ArkConstellation has now completed the most important original action item by moving to the v0.53.8 fork tag containing the upstream panic/DoS and correctness fixes. The remaining governance items are to strip or replace MANTRA-specific repository metadata and to keep the `MaxSupply` and bank-hook semantics as explicit product decisions.
+This fork is well-scoped: its functional differences from upstream are confined to three documented changes — two tested consensus-path features (bank pre-send hooks that are a no-op unless wired, and a mint max-supply cap with a proper migration) plus one **non-consensus query-path** behavior change (`x/auth/tx/query.go`'s `formatTxResults` silently drops undecodable txs where upstream returns an error; see §2) — plus repository/CI customization. ArkConstellation has now completed the most important original action item by moving to the v0.53.8 fork tag containing the upstream panic/DoS and correctness fixes. The remaining governance items are to strip or replace MANTRA-specific repository metadata and to keep the `MaxSupply` and bank-hook semantics as explicit product decisions.
