@@ -17,11 +17,17 @@ service Msg {
   // metadata on denominations that have none, or whose metadata is incomplete.
   //
   // Its purpose is IBC-derived denominations. ICS-20 does not carry denom
-  // metadata across the wire, so a receiving chain synthesises it, and what it
-  // synthesises has a `display` naming a unit absent from `denom_units`. Any
-  // consumer deriving decimals from that metadata gets 0 — including the
-  // x/erc20 module, whose deployed ERC-20 contracts then report decimals() = 0
-  // for tokens that are not 0-decimal.
+  // metadata across the wire, so a receiving chain writes a single denom unit
+  // at exponent 0 and never learns the source chain's real precision.
+  //
+  // x/erc20's ERC-20 precompile (precompiles/erc20/query.go Decimals()) reads
+  // this metadata live on every call. For an ibc/ base denom it matches the
+  // LAST '/'-separated segment of `display` against a denom_units entry — a
+  // real match, not a fallback; an unmatched display reverts the call rather
+  // than returning 0. The synthesised metadata's single unit ("amantra") does
+  // match that segment, so the lookup succeeds and correctly returns what is
+  // stored: exponent 0. decimals() = 0 because 0 is genuinely what was
+  // written, not because anything failed to resolve.
   rpc SetDenomMetadata(MsgSetDenomMetadata) returns (MsgSetDenomMetadataResponse);
 }
 

@@ -15,9 +15,12 @@ const govAuthority = "ark10d07y265gmmuvt4z0w9aw880jnsr700j2cu5hn"
 // MANTRA's amantra arrived over transfer/channel-0 on 2026-09-04, copied from
 // the live chain rather than invented. Its ERC-20 reports decimals() = 0.
 //
-// It is the exact input this module must refuse: `display` names a unit that is
-// absent from denom_units, so any consumer resolving decimals by looking up the
-// display unit finds nothing and falls back to 0.
+// Verified against precompiles/erc20/query.go's Decimals(): for an ibc/ base
+// denom it matches the last '/'-separated segment of `display` ("amantra")
+// against denom_units, that DOES match the single unit here, and the lookup
+// correctly returns what is stored — exponent 0. There is no "not found"
+// fallback in that path; a genuine non-match reverts the call. This module
+// exists because 0 is what got written, not because a lookup failed.
 func ibcSynthesisedMetadata() banktypes.Metadata {
 	return banktypes.Metadata{
 		Description: "IBC token from transfer/channel-0/amantra",

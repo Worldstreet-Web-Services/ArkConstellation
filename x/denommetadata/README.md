@@ -6,18 +6,28 @@ denom metadata on denominations that already exist.
 ## Why it exists
 
 ICS-20 does not carry denom metadata across the wire. When an asset arrives over
-IBC, the receiving chain synthesises metadata for it, and what it synthesises is
-internally inconsistent — `display` names a unit that is absent from
-`denom_units`:
+IBC, the receiving chain writes a single denom unit at exponent 0 and never
+learns the source chain's real precision:
 
 ```json
 display:     "transfer/channel-0/amantra"
 denom_units: [ { "denom": "amantra", "exponent": 0 } ]
 ```
 
-Anything resolving decimals by looking up the display unit finds nothing and
-falls back to 0. `x/erc20` does exactly that, so **every IBC-derived ERC-20 on
-this chain reports `decimals() = 0`**, whatever the real precision is.
+The ERC-20 precompile's `Decimals()` (`precompiles/erc20/query.go` in
+`cosmos/evm`) reads this metadata live on every call. For an `ibc/` base denom it
+matches the **last `/`-separated segment of `display`** against a `denom_units`
+entry — a real lookup, not a fallback; an unresolved display **reverts the
+call**, it does not return 0. Here the last segment is `"amantra"`, which *does*
+match the unit above, so the lookup succeeds and returns exactly what is stored:
+exponent 0. **`decimals() = 0` because 0 is genuinely what was written**, not
+because the lookup failed to find anything — so `x/erc20`'s ERC-20 for this
+denom reports `decimals() = 0` regardless of the real precision.
+
+(An earlier revision of this document described the mechanism as a
+"display not found, falls back to 0" — verified against the actual precompile
+source and corrected. There is no such fallback in that function; a genuine
+non-match reverts.)
 
 Measured on `arkdevnet_9000-1`, 2026-09-04: MANTRA's `amantra` (18 decimals)
 arrived over `channel-0`, and its ERC-20 at
