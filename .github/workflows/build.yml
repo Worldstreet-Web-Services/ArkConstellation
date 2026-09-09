@@ -61,15 +61,45 @@ jobs:
             "https://github.com/CosmWasm/wasmvm/releases/download/${WASMVM_VERSION}/libwasmvm.x86_64.so"
           sudo ldconfig
       - name: Validate genesis files
+        # This step looked only for networks/*/genesis.json, which has never
+        # existed in this repo, so it printed "skipping" and passed without
+        # inspecting anything. Validate every genesis*.json under networks/
+        # that is actually a complete genesis document, and fail rather than
+        # skip if none match. Two files are deliberately excluded because
+        # they aren't complete genesis documents: genesis-template.json is a
+        # JSON-merge-patch overlay (see its _comment) covered by the
+        # genesis-sync job instead, and genesis-params.json holds only the
+        # subset of params proposed for mainnet genesis, not a full genesis.
         run: |
+          shopt -s nullglob
           found=0
-          for dir in networks/*/; do
-            if [ -f "$dir/genesis.json" ]; then
-              echo "Validating $dir/genesis.json..."
-              ./build/arkd genesis validate-genesis "$dir/genesis.json"
-              found=1
+          status=0
+          for f in networks/*/genesis*.json; do
+            case "$f" in
+              networks/devnet/genesis-template.json|networks/mainnet/genesis-params.json)
+                continue
+                ;;
+            esac
+            found=1
+            echo "Validating $f ..."
+            if ! ./build/arkd genesis validate-genesis "$f"; then
+              echo "::error::genesis validation failed for $f" >&2
+              status=1
             fi
           done
           if [ "$found" -eq 0 ]; then
-            echo "No genesis.json files found yet — skipping validation."
+            echo "::error::no complete genesis file matched - this check must never pass vacuously" >&2
+            exit 1
           fi
+          exit $status
+
+  genesis-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Devnet genesis patch drift check
+        # genesis-template.json and pystarport.json carry the same merge patch
+        # in two places, and nothing but this script stops them from applying
+        # different parameters than the ones a human reviewed. `make devnet-init`
+        # depends on it locally; until now nothing ran it on a pull request.
+        run: python3 networks/devnet/check-genesis-sync.py
