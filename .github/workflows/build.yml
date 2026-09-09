@@ -63,26 +63,34 @@ jobs:
       - name: Validate genesis files
         # This step looked only for networks/*/genesis.json, which has never
         # existed in this repo, so it printed "skipping" and passed without
-        # inspecting anything. Validate the complete genesis files that are
-        # actually here, and fail rather than skip if the list is ever empty
-        # again. networks/devnet/genesis-template.json is deliberately absent:
-        # it is a JSON-merge-patch overlay, not a genesis file (see its
-        # _comment), and is covered by the genesis-sync job instead.
+        # inspecting anything. Validate every genesis*.json under networks/
+        # that is actually a complete genesis document, and fail rather than
+        # skip if none match. Two files are deliberately excluded because
+        # they aren't complete genesis documents: genesis-template.json is a
+        # JSON-merge-patch overlay (see its _comment) covered by the
+        # genesis-sync job instead, and genesis-params.json holds only the
+        # subset of params proposed for mainnet genesis, not a full genesis.
         run: |
           shopt -s nullglob
-          files=(networks/*/genesis.json networks/*/genesis-DRAFT.json)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "::error::no complete genesis file matched - this check must never pass vacuously" >&2
-            exit 1
-          fi
+          found=0
           status=0
-          for f in "${files[@]}"; do
+          for f in networks/*/genesis*.json; do
+            case "$f" in
+              networks/devnet/genesis-template.json|networks/mainnet/genesis-params.json)
+                continue
+                ;;
+            esac
+            found=1
             echo "Validating $f ..."
             if ! ./build/arkd genesis validate-genesis "$f"; then
               echo "::error::genesis validation failed for $f" >&2
               status=1
             fi
           done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::no complete genesis file matched - this check must never pass vacuously" >&2
+            exit 1
+          fi
           exit $status
 
   genesis-sync:
