@@ -34,12 +34,14 @@ def load_json(path):
 
 def main():
     template = load_json(TEMPLATE_PATH)
+    if not isinstance(template, dict):
+        sys.exit(f"error: {TEMPLATE_PATH} must contain a JSON object, got {type(template).__name__}")
     template.pop("_comment", None)
 
     pystarport_cfg = load_json(PYSTARPORT_PATH)
     try:
         embedded = pystarport_cfg[CHAIN_ID]["genesis"]
-    except KeyError as e:
+    except (KeyError, TypeError) as e:
         sys.exit(
             f"error: pystarport.json missing expected key path "
             f"['{CHAIN_ID}']['genesis']: {e}"
