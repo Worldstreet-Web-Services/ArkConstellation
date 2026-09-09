@@ -21,11 +21,22 @@ PYSTARPORT_PATH = HERE / "pystarport.json"
 CHAIN_ID = "arkdevnet_9000-1"
 
 
+def load_json(path):
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        sys.exit(f"error: {path} not found")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        sys.exit(f"error: {path} is not valid JSON: {e}")
+
+
 def main():
-    template = json.loads(TEMPLATE_PATH.read_text())
+    template = load_json(TEMPLATE_PATH)
     template.pop("_comment", None)
 
-    pystarport_cfg = json.loads(PYSTARPORT_PATH.read_text())
+    pystarport_cfg = load_json(PYSTARPORT_PATH)
     try:
         embedded = pystarport_cfg[CHAIN_ID]["genesis"]
     except KeyError as e:
