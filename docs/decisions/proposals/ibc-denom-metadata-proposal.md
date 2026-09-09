@@ -1,10 +1,10 @@
 # PROPOSAL: How IBC assets get correct decimals, given regular onboarding
 
-**Status:** 🟠 PROPOSAL — not decided. Requires sign-off from whoever owns the module set (decision #2, which removed `x/tokenfactory`). **Option A tested and eliminated 2026-09-07** — see below; the recommendation is now B.
+**Status:** ✅ DECIDED — B. Implemented as a governance-gated `MsgSetDenomMetadata` on `track/1-denommetadata` (commit `ecc6b660`, 2026-09-09). This document records the decision and the evidence behind it; it is not an open question. **Option A tested and eliminated 2026-09-07** — see below.
 
 **Author:** Drafted for review, 2026-09-05.
 
-**Scope:** One question — **how denom metadata gets set for IBC-derived assets**, now that the chain expects to onboard them regularly. It does **not** propose reversing decision #2, and it does **not** cover the Hyperlane path.
+**Scope:** One question — **how denom metadata gets set for IBC-derived assets**, now that the chain expects to onboard them regularly. It does **not** propose reversing decision #2, and it does **not** propose a Hyperlane-side fix or mitigation — the Hyperlane impact discussed below is cited only as motivation for urgency, not as something this decision resolves.
 
 ---
 
@@ -33,8 +33,11 @@ display:     "transfer/channel-0/amantra"
 denom_units: [ { "denom": "amantra", "exponent": 0 } ]
 ```
 
-`decimals` resolves to the exponent of the unit named by `display`, and that unit
-is absent from the list. It falls back to 0.
+`decimals` matches the last `/`-separated segment of `display` against the
+denom units list; here `amantra` *does* match the single unit in `denom_units` —
+there is no "unit missing" fallback involved. The match succeeds, but the unit it
+matches carries exponent 0, because the correct exponent (18) never crossed the
+wire in the first place.
 
 The native denom demonstrates the mechanism working: `esp` has `display: KASH`
 with `KASH` present at exponent 18, and resolves correctly. MANTRA publishes
@@ -47,8 +50,9 @@ something specific to Ark or MANTRA.
 ## Why it cannot be fixed today
 
 `x/bank` exposes no message for setting denom metadata. `x/tokenfactory`, which
-provides one, was removed in decision #2 along with ~13,000 lines including a
-module holding **Minter** permission — a decision this proposal does not dispute.
+provides one, was removed in decision #2 — part of a combined ~13,000-line removal
+alongside `x/tax` (decision #3) that included a module holding **Minter**
+permission — a decision this proposal does not dispute.
 
 The only route currently available is an **upgrade handler**: `app/upgrades/`
 exists and the app holds a `BankKeeper`, so a chain upgrade can call
@@ -123,8 +127,8 @@ B lands.
 
 Note what the evidence implies about decision #2: MANTRA gets correct decimals on
 its native denoms *because it kept `x/tokenfactory`*. Ark removed it and now has
-no route at all. That does not make removing 13,000 lines and a Minter permission
-wrong — but it does mean the specific capability of writing denom metadata needs
+no route at all. That does not make removing ~13,000 lines
+(`x/tax` + `x/tokenfactory` combined) and a Minter permission wrong — but it does mean the specific capability of writing denom metadata needs
 replacing, and B is the smallest possible replacement.
 
 ## The consequence that makes this more than cosmetic
