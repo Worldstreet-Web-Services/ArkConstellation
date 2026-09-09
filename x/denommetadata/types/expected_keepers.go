@@ -1,7 +1,8 @@
 package types
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"context"
+
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
@@ -11,7 +12,10 @@ import (
 // minting, no burning. The module cannot move or create tokens even if its
 // authority were compromised — it can only relabel denominations that already
 // exist.
+//
+// Signatures take context.Context rather than sdk.Context to match the SDK's
+// bank keeper as of v0.53.
 type BankKeeper interface {
-	GetDenomMetaData(ctx sdk.Context, denom string) (banktypes.Metadata, bool)
-	SetDenomMetaData(ctx sdk.Context, denomMetaData banktypes.Metadata)
+	GetDenomMetaData(ctx context.Context, denom string) (banktypes.Metadata, bool)
+	SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata)
 }

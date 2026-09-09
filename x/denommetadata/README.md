@@ -84,6 +84,21 @@ Governance-only, so there is no bespoke CLI command — submit it as a proposal:
 Take the exponent from the **source chain's** metadata, not from the
 IBC-derived ERC-20 contract — the contract is what is wrong.
 
+Two things `banktypes.Metadata.Validate()` enforces that catch people out:
+
+- **The first denom unit must be the base denom at exponent 0.** For an IBC
+  asset that is the `ibc/<hash>`, not the source chain's base name. Writing
+  `{"denom": "amantra", "exponent": 0}` first looks natural and is rejected; put
+  the hash first and carry `amantra` as an alias.
+- **A unit named by `display` must exist.** This is the rule whose absence causes
+  `decimals() = 0`, and bank already enforces it — which is why this module adds
+  no check of its own for it. An earlier revision did, and it was removed once
+  bank's behaviour was tested rather than assumed.
+
+Together these mean the metadata the chain synthesises on IBC receipt would
+**not pass bank's own validation**. It exists only because the transfer module
+writes it directly, bypassing `Validate()`.
+
 ## Until a proposal lands
 
 Assets that arrived before their metadata was corrected still report
