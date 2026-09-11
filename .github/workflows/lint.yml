@@ -21,7 +21,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Check cosmos-sdk / cosmossdk.io/api lockstep pin
-        run: ./scripts/check-sdk-api-lockstep.sh go.mod
+        run: |
+          ./scripts/check-sdk-api-lockstep.sh go.mod
+          ./scripts/check-sdk-api-lockstep.sh tests/interchain/go.mod
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:

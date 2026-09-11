@@ -35,6 +35,7 @@ lint-all:
 lint-sdk-lockstep:
 	@echo "--> Checking cosmos-sdk / cosmossdk.io/api replace pins are in lockstep"
 	@./scripts/check-sdk-api-lockstep.sh go.mod
+	@./scripts/check-sdk-api-lockstep.sh tests/interchain/go.mod
 
 formatter-install:
 	@echo "--> Installing gofumpt"

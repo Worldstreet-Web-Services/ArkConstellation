@@ -9,9 +9,9 @@ set -euo pipefail
 GO_MOD="${1:-go.mod}"
 
 sdk_commit=$(grep -oE 'Direct commit link: https://github.com/MANTRA-Chain/cosmos-sdk/tree/[0-9a-f]{7,40}' "$GO_MOD" \
-  | head -1 | grep -oE '[0-9a-f]{7,40}$')
+  | head -1 | grep -oE '[0-9a-f]{7,40}$') || true
 api_commit=$(grep -E '^\s*cosmossdk\.io/api\s*=>' "$GO_MOD" \
-  | grep -oE '[0-9a-f]{12}$')
+  | grep -oE '[0-9a-f]{12}$') || true
 
 if [ -z "$sdk_commit" ] || [ -z "$api_commit" ]; then
   echo "::error::could not extract cosmos-sdk and cosmossdk.io/api commit references from $GO_MOD" >&2
