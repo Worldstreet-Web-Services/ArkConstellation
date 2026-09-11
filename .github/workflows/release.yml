@@ -26,6 +26,9 @@ permissions:
 jobs:
   verify-security-gate:
     name: Verify Eng 3 Security & Chaos Sign-Off
+    # Release evidence is only required when actually cutting a release. PR
+    # snapshot builds must not be blocked by missing chaos artifacts.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Git repo
@@ -37,12 +40,16 @@ jobs:
         with:
           python-version: '3.11'
       - name: Run Eng 3 Release Gate Verification
-        run: |
-          python3 scripts/release/verify-eng3-signoff.py "${{ github.event.inputs.release_tag || github.ref_name }}"
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
+        run: python3 scripts/release/verify-eng3-signoff.py "$RELEASE_TAG"
 
   build:
     name: Build - ${{ matrix.platform.name }}
     needs: [verify-security-gate]
+    # A skipped `needs` job skips its dependents by default, so the gate being
+    # skipped on pull_request would otherwise kill PR builds entirely.
+    if: ${{ !cancelled() && (needs.verify-security-gate.result == 'success' || needs.verify-security-gate.result == 'skipped') }}
     runs-on: ${{ matrix.platform.runner || 'chain-runner' }}
     strategy:
       matrix:

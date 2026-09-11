@@ -27,7 +27,7 @@ help:
 	@echo "  make blockscout-down       Stop local Blockscout explorer"
 	@echo "  make blockscout-logs       Tail Blockscout explorer logs"
 	@echo "  make release-gate-check    Verify Eng 3 Security & Chaos sign-off release gate"
-	@echo "  make tag-rc                Safely tag a release candidate after verifying Eng 3 gate"
+	@echo "  make tag-rc TAG=<tag>      Safely tag a release candidate after verifying Eng 3 gate"
 	@echo ""
 	@echo "Run 'make [subcommand]' to see the available commands for each subcommand."
 
@@ -283,13 +283,13 @@ build-and-run-single-node: build
 ###############################################################################
 
 release-gate-check:
-	@python3 scripts/release/verify-eng3-signoff.py $(VERSION)
+	@python3 scripts/release/verify-eng3-signoff.py $(or $(TAG),$(VERSION))
 
 tag-rc:
-	@if [ -z "$(VERSION)" ]; then \
-		echo "!!! Error: VERSION is required. Usage: make tag-rc VERSION=ark-v1.0.0-rc1" >&2; \
+	@if [ -z "$(TAG)" ]; then \
+		echo "!!! Error: TAG is required. Usage: make tag-rc TAG=ark-v1.0.0-rc1" >&2; \
 		exit 1; \
 	fi
-	@./scripts/release/tag-release.sh $(VERSION)
+	@./scripts/release/tag-release.sh $(TAG)
 
 .PHONY: release-gate-check tag-rc

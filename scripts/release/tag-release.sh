@@ -15,10 +15,20 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Tag the repository this script lives in, not whatever directory the caller
+# happened to be standing in.
+cd "$REPO_ROOT"
+
+if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+  echo "!!! Error: tag '$TAG_NAME' already exists in $REPO_ROOT." >&2
+  echo "    Refusing to overwrite a published tag. Delete it deliberately if that is intended." >&2
+  exit 1
+fi
+
 echo ">>> Validating Eng 3 Security & Chaos Sign-Off for release tag: $TAG_NAME"
 python3 "$SCRIPT_DIR/verify-eng3-signoff.py" "$TAG_NAME"
 
-echo ">>> Creating annotated git tag '$TAG_NAME'..."
+echo ">>> Creating annotated git tag '$TAG_NAME' in $REPO_ROOT..."
 git tag -a "$TAG_NAME" -m "Release $TAG_NAME (Validated with Eng 3 Security & Chaos Sign-Off)"
 
 echo ">>> Successfully created tag '$TAG_NAME'."
