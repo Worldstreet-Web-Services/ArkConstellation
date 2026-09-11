@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Check cosmos-sdk / cosmossdk.io/api lockstep pin
+        run: ./scripts/check-sdk-api-lockstep.sh go.mod
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:

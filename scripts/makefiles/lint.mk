@@ -13,6 +13,7 @@ lint-help:
 	@echo "  format                Run linters with auto-fix"
 	@echo "  markdown              Run markdown linter with auto-fix"
 	@echo "  mdlint                Run markdown linter"
+	@echo "  sdk-lockstep           Check cosmos-sdk / cosmossdk.io/api replace pins match"
 	@echo "  setup-pre-commit      Set pre-commit git hook"
 	@echo "  typo                  Run codespell to check typos"
 lint: lint-help
@@ -29,6 +30,11 @@ lint-all:
 	$(MAKE) lint-install
 	@golangci-lint run --timeout=10m
 	@docker run -v $(PWD):/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "**/*.md"
+	$(MAKE) lint-sdk-lockstep
+
+lint-sdk-lockstep:
+	@echo "--> Checking cosmos-sdk / cosmossdk.io/api replace pins are in lockstep"
+	@./scripts/check-sdk-api-lockstep.sh go.mod
 
 formatter-install:
 	@echo "--> Installing gofumpt"
