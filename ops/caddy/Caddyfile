@@ -1,0 +1,56 @@
+# ArkConstellation devnet — public endpoints.
+#
+# This is the LIVE configuration captured from /etc/caddy/Caddyfile on the
+# ark-devnet host (us-central1-a) on 2026-09-04, plus one addition: the grpc.
+# route. Everything else is verbatim, so this file is now a description of what
+# is running rather than a proposal about it.
+#
+# Caddy runs as a host systemd unit, not a container, so upstreams are
+# localhost:<published port>.
+
+rpc.34.60.137.196.sslip.io {
+    reverse_proxy localhost:26657
+}
+evm.34.60.137.196.sslip.io {
+    reverse_proxy localhost:8545
+}
+evm-ws.34.60.137.196.sslip.io {
+    reverse_proxy localhost:8546
+}
+lcd.34.60.137.196.sslip.io {
+    reverse_proxy localhost:1317
+}
+explorer.34.60.137.196.sslip.io {
+    reverse_proxy localhost:3000
+}
+explorer-api.34.60.137.196.sslip.io {
+    reverse_proxy localhost:4000
+}
+
+faucet.34.60.137.196.sslip.io {
+    reverse_proxy localhost:8088
+}
+
+# --- ADDED: Cosmos gRPC ------------------------------------------------------
+# Required by IBC relayers (Hermes, the Go relayer) for account queries and
+# transaction simulation. RPC and LCD are not sufficient.
+#
+# The node already serves gRPC: entrypoint.sh moves it to 0.0.0.0:9095 to leave
+# 9090 to CometBFT's Prometheus endpoint, and `netstat` inside ark-sentry-0
+# confirms :::9095 LISTEN. It is published to the host as 127.0.0.1:9095:9095 —
+# loopback only, since Caddy runs here and nothing external should reach it
+# directly. See ops/docker/docker-compose.devnet.yml.
+#
+# Only sentry-0 publishes gRPC. Sentry-1's was dropped as unused; if this route
+# ever needs a failover upstream, publish it there and add it here deliberately.
+#
+# h2c is required. gRPC is HTTP/2; without this Caddy speaks HTTP/1.1 to the
+# upstream and every call fails with a protocol error that reads like a network
+# fault rather than a configuration mistake.
+grpc.34.60.137.196.sslip.io {
+    reverse_proxy localhost:9095 {
+        transport http {
+            versions h2c 2
+        }
+    }
+}

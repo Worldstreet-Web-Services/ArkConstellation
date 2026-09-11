@@ -12,7 +12,7 @@ services:
     volumes:
       - blockscout-db-data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-blockscout}"]
       interval: 5s
@@ -24,7 +24,7 @@ services:
     container_name: blockscout-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -38,7 +38,7 @@ services:
     environment:
       SMART_CONTRACT_VERIFIER__SERVER__HTTP__ADDR: 0.0.0.0:8050
     ports:
-      - "8050:8050"
+      - "127.0.0.1:8050:8050"
 
   backend:
     image: ghcr.io/blockscout/blockscout:latest
@@ -100,18 +100,19 @@ services:
     environment:
       PORT: "3000"
       NEXT_PUBLIC_API_BASE_PATH: /
-      NEXT_PUBLIC_API_HOST: localhost
-      NEXT_PUBLIC_API_PORT: "4000"
-      NEXT_PUBLIC_API_PROTOCOL: http
-      NEXT_PUBLIC_APP_HOST: localhost
-      NEXT_PUBLIC_APP_PORT: "3000"
-      NEXT_PUBLIC_APP_PROTOCOL: http
+      NEXT_PUBLIC_API_HOST: ${NEXT_PUBLIC_API_HOST:-localhost}
+      NEXT_PUBLIC_API_PORT: "${NEXT_PUBLIC_API_PORT:-4000}"
+      NEXT_PUBLIC_API_PROTOCOL: ${NEXT_PUBLIC_API_PROTOCOL:-http}
+      NEXT_PUBLIC_APP_HOST: ${NEXT_PUBLIC_APP_HOST:-localhost}
+      NEXT_PUBLIC_APP_PORT: "${NEXT_PUBLIC_APP_PORT:-3000}"
+      NEXT_PUBLIC_APP_PROTOCOL: ${NEXT_PUBLIC_APP_PROTOCOL:-http}
       NEXT_PUBLIC_NETWORK_NAME: ${NETWORK:-ArkConstellation Devnet}
       NEXT_PUBLIC_NETWORK_SHORT_NAME: "Ark Devnet"
       NEXT_PUBLIC_NETWORK_ID: "${CHAIN_ID:-9000}"
       NEXT_PUBLIC_NETWORK_CURRENCY_NAME: ${COIN:-KASH}
       NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: ${COIN:-KASH}
       NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
+      NEXT_PUBLIC_NETWORK_CURRENCY_WEI_NAME: ${NEXT_PUBLIC_NETWORK_CURRENCY_WEI_NAME:-esp}
       NEXT_PUBLIC_IS_TESTNET: "true"
       NEXT_PUBLIC_NETWORK_RPC_URL: ${NEXT_PUBLIC_NETWORK_RPC_URL:-http://127.0.0.1:8545}
     ports:

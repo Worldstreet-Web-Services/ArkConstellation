@@ -75,6 +75,7 @@ update the Prometheus config targets to point at the host:
 | 1317    | HTTP     | Cosmos LCD/API (REST)           |
 | 8545    | HTTP     | EVM JSON-RPC (if enabled)       |
 | 9090    | HTTP     | Prometheus metrics              |
+| 9095    | gRPC/h2c | Cosmos gRPC (sentry-0, loopback) |
 | 3000    | HTTP     | Grafana dashboards              |
 | 9091    | HTTP     | Prometheus (devnet compose)     |
 | 9092    | HTTP     | Prometheus (devnet compose)     |

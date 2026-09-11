@@ -53,10 +53,19 @@ for i in $(seq 0 $((VALIDATOR_COUNT - 1))); do
     echo "    validator-${i}: ${ADDR}"
 done
 
-echo "y" | arkd keys add faucet \
-    --home "$VALIDATOR_HOME" \
-    --keyring-backend test \
-    > /dev/null 2>&1
+if [ -n "${FAUCET_MNEMONIC:-}" ]; then
+    echo "  Recovering faucet key from FAUCET_MNEMONIC..."
+    echo "$FAUCET_MNEMONIC" | arkd keys add faucet \
+        --home "$VALIDATOR_HOME" \
+        --keyring-backend test \
+        --recover \
+        > /dev/null 2>&1
+else
+    echo "y" | arkd keys add faucet \
+        --home "$VALIDATOR_HOME" \
+        --keyring-backend test \
+        > /dev/null 2>&1
+fi
 FAUCET_ADDR=$(arkd keys show faucet --home "$VALIDATOR_HOME" --keyring-backend test --address)
 echo "    faucet: ${FAUCET_ADDR}"
 

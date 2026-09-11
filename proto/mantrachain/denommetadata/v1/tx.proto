@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package mantrachain.denommetadata.v1;
+
+import "cosmos/bank/v1beta1/bank.proto";
+import "cosmos/msg/v1/msg.proto";
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/types";
+
+// Msg defines the Msg service.
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  // SetDenomMetadata defines a (governance) operation for setting bank denom
+  // metadata on denominations that have none, or whose metadata is incomplete.
+  //
+  // Its purpose is IBC-derived denominations. ICS-20 does not carry denom
+  // metadata across the wire, so a receiving chain writes a single denom unit
+  // at exponent 0 and never learns the source chain's real precision.
+  //
+  // x/erc20's ERC-20 precompile (precompiles/erc20/query.go Decimals()) reads
+  // this metadata live on every call. For an ibc/ base denom it matches the
+  // LAST '/'-separated segment of `display` against a denom_units entry — a
+  // real match, not a fallback; an unmatched display reverts the call rather
+  // than returning 0. The synthesised metadata's single unit ("amantra") does
+  // match that segment, so the lookup succeeds and correctly returns what is
+  // stored: exponent 0. decimals() = 0 because 0 is genuinely what was
+  // written, not because anything failed to resolve.
+  rpc SetDenomMetadata(MsgSetDenomMetadata) returns (MsgSetDenomMetadataResponse);
+}
+
+// MsgSetDenomMetadata sets bank denom metadata for one or more denominations.
+message MsgSetDenomMetadata {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // authority is the address permitted to set metadata; normally the gov module.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // metadata to write. Each entry's `base` identifies the denomination.
+  repeated cosmos.bank.v1beta1.Metadata metadata = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// MsgSetDenomMetadataResponse defines the response type.
+message MsgSetDenomMetadataResponse {}

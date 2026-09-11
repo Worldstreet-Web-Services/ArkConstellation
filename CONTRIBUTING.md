@@ -59,18 +59,20 @@ git push origin track/N-description
 ### Merging Back
 
 - Open a pull request targeting `base-genesis` (not `main`)
-- The CI `build` job must pass before merging
+- The CI `build`, `validate-genesis`, and `genesis-sync` jobs must all pass before merging (enforced by branch protection)
 - The track lead must sign off before merge
 
 ---
 
 ## CI Pipeline
 
-Every push and pull request triggers two automated jobs:
+Every push and pull request triggers three automated jobs:
 
 1. **`build`** — Compiles `mantrachaind` using Go 1.25. Uploads the binary as a downloadable artifact. If this fails, the binary is broken.
 
-2. **`validate-genesis`** — Runs after `build`. Downloads the compiled binary and validates any `genesis.json` files found under `networks/`. Skips cleanly if no genesis files exist yet.
+2. **`validate-genesis`** — Runs after `build`. Downloads the compiled binary and validates every complete `genesis.json`/`genesis-DRAFT.json` file found under `networks/`. Fails loudly (it never skips) if no such file is found, so it can't pass without inspecting anything.
+
+3. **`genesis-sync`** — Checks that `networks/devnet/genesis-template.json` and `pystarport.json` carry the same merge patch, so the two copies can't silently drift apart.
 
 **Engineers 2, 3, and 4** do not need Go installed locally. Download the pre-compiled `mantrachaind` binary directly from the GitHub Actions artifact on any passing `build` run:
 

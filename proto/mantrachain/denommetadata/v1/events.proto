@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package mantrachain.denommetadata.v1;
+
+option go_package = "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/types";
+
+// EventSetDenomMetadata is emitted when denom metadata is set.
+//
+// Indexers and bridge operators should watch this: a change to a denom's
+// exponent changes how every amount in that denom is interpreted.
+message EventSetDenomMetadata {
+  string denom = 1;
+  string display = 2;
+}
