@@ -19,6 +19,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # happened to be standing in.
 cd "$REPO_ROOT"
 
+if git remote get-url origin >/dev/null 2>&1; then
+  echo ">>> Fetching tags from origin to check for an existing release..."
+  git fetch origin --tags --quiet
+fi
+
 if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
   echo "!!! Error: tag '$TAG_NAME' already exists in $REPO_ROOT." >&2
   echo "    Refusing to overwrite a published tag. Delete it deliberately if that is intended." >&2

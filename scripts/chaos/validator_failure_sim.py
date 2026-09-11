@@ -217,6 +217,11 @@ def run_validator_failure_simulation(
         "start_height": start_height,
         "end_height": end_height,
         "baseline_rate_bps": baseline_rate,
+        # Raw per-cycle samples taken during the fault window, so a
+        # consumer can independently recompute liveness rather than
+        # trusting liveness_maintained/fast_sync_verified as-is.
+        "fault_blocks": fault_blocks,
+        "fault_window_last_height": f_last_h,
         "liveness_maintained": liveness_maintained,
         "fast_sync_verified": fast_sync_verified,
         "executed": cluster_online,

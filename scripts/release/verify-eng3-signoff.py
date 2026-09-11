@@ -21,7 +21,9 @@ Checks:
 
 import sys
 import json
+import subprocess
 from pathlib import Path
+from typing import Optional
 
 # ANSI Color Codes
 GREEN = "\033[92m"
@@ -41,6 +43,45 @@ CONTRACTS_DIR = CHAOS_DIR / "contracts"
 GENERATED_SUFFIXES = (".pb.go", ".pb.gw.go")
 
 GUARDRAIL_CONTRACT = "LaunchGuardrail.sol"
+
+# Paths whose changes require fresh Eng 3 evidence: the AnteHandler/circuit
+# breaker wiring under test, the guardrail contracts, and the harnesses
+# themselves. If any of these changed more recently (in commit-graph terms)
+# than the committed evidence, the evidence is stale and must not certify
+# the release.
+EVIDENCE_PATHS = ("scripts/chaos/reports",)
+SOURCE_PATHS = ("app/ante", "scripts/chaos/contracts", "scripts/chaos/*.py")
+
+
+def git_output(args) -> Optional[str]:
+    try:
+        res = subprocess.run(
+            ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15
+        )
+    except Exception:
+        return None
+    if res.returncode != 0:
+        return None
+    out = res.stdout.strip()
+    return out or None
+
+
+def resolve_commit(ref: str) -> Optional[str]:
+    return git_output(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"])
+
+
+def last_commit_touching(commit: str, paths: tuple) -> Optional[str]:
+    return git_output(["log", "-1", "--format=%H", commit, "--", *paths])
+
+
+def is_ancestor(older: str, newer: str) -> bool:
+    if older == newer:
+        return True
+    res = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", older, newer],
+        cwd=REPO_ROOT, capture_output=True, timeout=15,
+    )
+    return res.returncode == 0
 
 
 def log_pass(message: str):
@@ -89,6 +130,36 @@ def is_generated(path: str) -> bool:
     return path.endswith(GENERATED_SUFFIXES)
 
 
+def collect_sol_filenames(obj) -> set:
+    """
+    Recursively collect every ``*.sol`` basename mentioned anywhere in a
+    parsed Slither JSON document.
+
+    Restricting coverage detection to `detectors[].elements[]` (findings
+    only) makes a contract that Slither genuinely analyzed but which
+    triggered zero findings of any severity indistinguishable from one
+    that was never scanned. Slither's `--json-types` can include a
+    `compilation_units` section (or other sections) that name every
+    analyzed source file even with no findings; walking the whole
+    document picks those up too, whatever shape they take, without this
+    script having to hardcode a specific Slither schema version.
+    """
+    found = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+        elif isinstance(node, str) and node.endswith(".sol"):
+            found.add(Path(node).name)
+
+    walk(obj)
+    return found
+
+
 def check_suite_counts(gate: Gate, data: dict, label: str):
     """Shared assertion for the pass/fail/skip suites (rate-limit, rpc)."""
     total = data.get("total", 0)
@@ -133,6 +204,51 @@ def verify_gate(target_tag: str = "") -> bool:
     print(f"  Evaluating Eng 3 (Security & Chaos) Prerequisites...\n")
 
     gate = Gate()
+
+    # ---------------------------------------------------------
+    # 0. Verify Eng 3 evidence is bound to the commit being released
+    # ---------------------------------------------------------
+    # A checked-in evidence tree satisfies every downstream check even when
+    # it was captured against an earlier commit — nothing above ties the
+    # report contents to what is actually being tagged. Close that gap by
+    # requiring the evidence directory to have last changed at or after the
+    # last change to the code/contracts it certifies, as of the commit
+    # being released.
+    print(f"{BOLD}0. Verifying Eng 3 Evidence Is Bound To The Release Commit...{RESET}")
+    target_commit = resolve_commit(target_tag) if target_tag else None
+    if target_commit is None:
+        # tag-release.sh runs this before the tag exists, and a plain local
+        # invocation has no tag at all — HEAD is the commit that would be
+        # tagged in both cases.
+        target_commit = resolve_commit("HEAD")
+
+    if target_commit is None:
+        gate.fail(
+            "Commit binding: could not resolve a git commit for "
+            f"{target_tag or 'HEAD'} — is this a full git checkout "
+            "(fetch-depth: 0, fetch-tags: true)?"
+        )
+    else:
+        evidence_commit = last_commit_touching(target_commit, EVIDENCE_PATHS)
+        source_commit = last_commit_touching(target_commit, SOURCE_PATHS)
+        if evidence_commit is None:
+            gate.fail(
+                f"Commit binding: {EVIDENCE_PATHS[0]} has no history as of "
+                f"{target_commit[:12]} — no evidence was ever committed for this ref"
+            )
+        elif source_commit is not None and not is_ancestor(source_commit, evidence_commit):
+            gate.fail(
+                f"Commit binding: evidence last updated at {evidence_commit[:12]} but "
+                f"security-relevant source last changed at {source_commit[:12]} (both "
+                f"as of {target_commit[:12]}) — evidence predates the code it must "
+                f"certify, re-run the Eng 3 harnesses against this commit"
+            )
+        else:
+            log_pass(
+                f"Commit binding: evidence ({evidence_commit[:12]}) covers the "
+                f"latest relevant source change ({source_commit[:12] if source_commit else 'n/a'}) "
+                f"as of {target_commit[:12]}"
+            )
 
     # ---------------------------------------------------------
     # 1. Verify Markdown Milestone Reports
@@ -239,13 +355,7 @@ def verify_gate(target_tag: str = "") -> bool:
             log_pass("Slither: 0 High/Medium impact findings")
 
         # Severity alone is meaningless if the shipping contract was never scanned.
-        scanned = set()
-        for d in detectors:
-            for el in d.get("elements", []) or []:
-                sm = el.get("source_mapping") or {}
-                name = sm.get("filename_relative") or sm.get("filename_short") or ""
-                if name:
-                    scanned.add(Path(name).name)
+        scanned = collect_sol_filenames(slither.get("results") or {})
         gate.check(
             GUARDRAIL_CONTRACT in scanned,
             f"Slither: coverage includes {GUARDRAIL_CONTRACT}",
@@ -305,11 +415,25 @@ def verify_gate(target_tag: str = "") -> bool:
             f"Validator Failure: chain advanced {start_h} -> {end_h} during outage",
             f"Validator Failure: no block progress ({start_h} -> {end_h})",
         )
+        # Recompute liveness/fast-sync from the raw per-cycle samples rather
+        # than trusting the harness's self-reported booleans — same
+        # principle already applied to Mempool Flood above.
+        fault_blocks = validator.get("fault_blocks", []) or []
         gate.check(
-            validator.get("liveness_maintained") is True
-            and validator.get("fast_sync_verified") is True,
-            "Validator Failure: liveness maintained and fast-sync verified",
-            "Validator Failure: liveness or fast-sync not verified",
+            len(fault_blocks) > 0,
+            f"Validator Failure: {len(fault_blocks)} block(s) independently observed "
+            f"committing during the simulated outage",
+            "Validator Failure: no blocks observed committing during the outage "
+            "(fault_blocks empty) — liveness not proven by raw data",
+        )
+        fault_window_last_height = validator.get("fault_window_last_height", 0)
+        gate.check(
+            fault_window_last_height > 0 and end_h >= fault_window_last_height,
+            f"Validator Failure: recovered height {end_h} reached the outage-window "
+            f"height {fault_window_last_height}",
+            f"Validator Failure: recovered height {end_h} never reached the "
+            f"outage-window height {fault_window_last_height} — fast-sync not proven "
+            f"by raw data",
         )
 
     breaker = gate.load_json(

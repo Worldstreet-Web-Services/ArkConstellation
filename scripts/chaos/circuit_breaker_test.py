@@ -138,7 +138,31 @@ class CircuitBreakerTester:
             self.record_test("4. AnteHandler Rejection Verification (Cosmos Path)", rejected, f"Rejected active msg: {out or err}")
 
             # Test 5: Verify EVM AnteHandler Rejection (EVM Path)
-            self.record_test("5. AnteHandler Rejection Verification (EVM Path)", True, f"Verified EVM AnteHandler (app/ante/evm.go) enforces x/circuit for {evm_msg_url}")
+            # Disable the EVM message type itself, then re-query the on-chain
+            # disabled-list to confirm the circuit breaker module actually
+            # took effect for it (not just that the CLI accepted the command).
+            code, out, err = self.run_cli([
+                "tx", "circuit", "disable", evm_msg_url,
+                "--from", self.admin_key,
+                "--chain-id", self.chain_id,
+                "-y", "-b", "sync", "--gas-prices", "10000000000esp"
+            ])
+            evm_disable_accepted = code == 0
+            dlist_after_evm_disable = self.get_disabled_list() if evm_disable_accepted else []
+            evm_rejected = evm_disable_accepted and evm_msg_url in dlist_after_evm_disable
+            self.record_test(
+                "5. AnteHandler Rejection Verification (EVM Path)",
+                evm_rejected,
+                f"Disable exit code: {code}; disabled-list after: {dlist_after_evm_disable}"
+            )
+
+            # Reset the EVM message type so the cluster isn't left disabled.
+            code, out, err = self.run_cli([
+                "tx", "circuit", "reset", evm_msg_url,
+                "--from", self.admin_key,
+                "--chain-id", self.chain_id,
+                "-y", "-b", "sync", "--gas-prices", "10000000000esp"
+            ])
 
             # Test 6: Reset Circuit Breaker
             code, out, err = self.run_cli([

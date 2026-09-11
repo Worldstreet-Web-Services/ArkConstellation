@@ -283,7 +283,11 @@ build-and-run-single-node: build
 ###############################################################################
 
 release-gate-check:
-	@python3 scripts/release/verify-eng3-signoff.py $(or $(TAG),$(VERSION))
+	@if [ -z "$(TAG)" ]; then \
+		echo "!!! Error: TAG is required. Usage: make release-gate-check TAG=ark-v1.0.0-rc1" >&2; \
+		exit 1; \
+	fi
+	@python3 scripts/release/verify-eng3-signoff.py $(TAG)
 
 tag-rc:
 	@if [ -z "$(TAG)" ]; then \
