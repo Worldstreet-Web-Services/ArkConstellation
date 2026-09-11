@@ -152,41 +152,56 @@ class CircuitBreakerTester:
         else:
             # Offline CLI Construction & AnteHandler Logic Validation
             print(f"\n{YELLOW}[!] Node cluster offline. Validating CLI argument constructions & AnteHandler handlers.{RESET}")
+            # These validate CLI argument construction only. Nothing is executed
+            # against a chain, so they are recorded as skipped rather than passed.
             self.record_test(
                 "2. Initial Circuit Breaker Query Structure",
-                self.binary_available,
-                f"Validated CLI syntax: '{self.binary_path} query circuit disabled-list --node {self.cmt_rpc}'"
+                False,
+                f"Node offline — validated CLI syntax only: '{self.binary_path} query circuit disabled-list --node {self.cmt_rpc}'",
+                skipped=True
             )
             self.record_test(
                 "3. Disable MsgSend Transaction Construction",
-                self.binary_available,
-                f"Validated CLI syntax: '{self.binary_path} tx circuit disable {msg_url} --from {self.admin_key} --chain-id {self.chain_id}'"
+                False,
+                f"Node offline — validated CLI syntax only: '{self.binary_path} tx circuit disable {msg_url}'",
+                skipped=True
             )
             self.record_test(
                 "4. AnteHandler Rejection Logic (Cosmos Path)",
-                True,
-                "Verified app/ante/cosmos.go CircuitBreakerDecorator rejects disabled type URL with code 1"
+                False,
+                "Node offline — app/ante/cosmos.go CircuitBreakerDecorator not exercised",
+                skipped=True
             )
             self.record_test(
                 "5. AnteHandler Rejection Logic (EVM Path)",
-                True,
-                "Verified app/ante/evm.go EVMCircuitBreakerDecorator rejects disabled MsgEthereumTx"
+                False,
+                "Node offline — app/ante/evm.go EVMCircuitBreakerDecorator not exercised",
+                skipped=True
             )
             self.record_test(
                 "6. Reset Circuit Breaker Transaction Construction",
-                self.binary_available,
-                f"Validated CLI syntax: '{self.binary_path} tx circuit reset {msg_url} --from {self.admin_key} --chain-id {self.chain_id}'"
+                False,
+                f"Node offline — validated CLI syntax only: '{self.binary_path} tx circuit reset {msg_url}'",
+                skipped=True
             )
 
         passed_count = sum(1 for r in self.results if r["passed"])
+        skipped_count = sum(1 for r in self.results if r.get("skipped"))
         total_count = len(self.results)
-        all_passed = (passed_count == total_count)
+        # Fail closed: structural CLI validation against an offline node is
+        # not a circuit breaker test.
+        all_passed = (
+            node_online
+            and skipped_count == 0
+            and passed_count == total_count
+        )
 
         print(f"\n{BOLD}{CYAN}============================================================{RESET}")
         print(f"{BOLD} Circuit Breaker Suite Summary{RESET}")
         print(f" Total Tests : {total_count}")
         print(f" Passed      : {GREEN}{passed_count}{RESET}")
-        print(f" Failed      : {RED}{total_count - passed_count}{RESET}")
+        print(f" Failed      : {RED}{total_count - passed_count - skipped_count}{RESET}")
+        print(f" Skipped     : {YELLOW}{skipped_count}{RESET}")
         print(f"{BOLD}{CYAN}============================================================{RESET}")
 
         summary = {
@@ -194,6 +209,8 @@ class CircuitBreakerTester:
             "chain_id": self.chain_id,
             "binary": self.binary_path,
             "node_online": node_online,
+            "executed": node_online,
+            "skipped": skipped_count,
             "total": total_count,
             "passed": passed_count,
             "all_passed": all_passed,

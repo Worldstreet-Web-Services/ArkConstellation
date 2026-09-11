@@ -33,6 +33,24 @@ any on faith:
       no timelock field or hook. If launch is proceeding without it, that is
       a conscious, documented risk acceptance, not an oversight; confirm
       someone has actually made that call rather than assuming it's handled.
+- [ ] `evm.params.active_static_precompiles` in the assembled genesis matches
+      `ArkActiveStaticPrecompiles()` in `app/precompiles.go` **as compiled into
+      the tagged binary** - 9 addresses, sorted, lowercase. `validate-genesis`
+      does NOT check this: an empty list boots fine and silently makes every
+      Cosmos module unreachable from Solidity (this is how the array shipped as
+      `[]` through an entire audit cycle - issue #37), and an address that is
+      active in params but not registered in the binary passes validation and
+      then **panics on first call**, reachable over unauthenticated `eth_call`.
+      `go test ./app/ -run Precompile` against the tagged commit is the check;
+      `0x...0803` must NOT appear. See
+      `docs/decisions/proposals/precompile-enablement-proposal.md`.
+- [ ] Eng 3 has actually signed off on Staking (`0x...0800`), ICS20
+      (`0x...0802`) and `distrclaim` (`0x...0a01`) specifically. These three are
+      recorded as blocking `v1.0.0` in the precompile proposal's sign-off table
+      and were NOT covered by the Day 1 static analysis, whose precompile table
+      was wrong in eight of ten rows (since corrected). If the reviews have not
+      landed, remove those addresses from the genesis list rather than launching
+      and reviewing afterwards.
 
 ## Step 1 — Assemble the base genesis
 

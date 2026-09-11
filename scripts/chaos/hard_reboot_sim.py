@@ -110,12 +110,16 @@ def run_hard_reboot_simulation(
     evm_client = EVMClient(evm_rpc)
     results = []
 
-    def record_step(name: str, passed: bool, details: str = ""):
-        status = f"{GREEN}[PASS]{RESET}" if passed else f"{RED}[FAIL]{RESET}"
+    def record_step(name: str, passed: bool, details: str = "", skipped: bool = False):
+        if skipped:
+            status = f"{YELLOW}[SKIP]{RESET}"
+        else:
+            status = f"{GREEN}[PASS]{RESET}" if passed else f"{RED}[FAIL]{RESET}"
         print(f"  {status} {name}")
         if details:
             print(f"         {details}")
-        results.append({"name": name, "passed": passed, "details": details})
+        results.append({"name": name, "passed": passed and not skipped,
+                        "skipped": skipped, "details": details})
 
     # Step 1: Pre-Reboot Dual-Engine Baseline Capture
     print(f"\n{BOLD}[1/4] Capturing pre-reboot baseline state snapshot across CometBFT and EVM...{RESET}")
@@ -149,8 +153,9 @@ def run_hard_reboot_simulation(
         cluster_online = False
         record_step(
             "1. Pre-Reboot State Capture Schema",
-            True,
-            "Validated dual-engine state capture schema (CometBFT app_hash, EVM state trie root)"
+            False,
+            "Validated dual-engine state capture schema only — no live state captured",
+            skipped=True
         )
 
     # Step 2: Simulate Hard Reboot / Process Interruption
@@ -176,8 +181,9 @@ def run_hard_reboot_simulation(
         time.sleep(restart_wait_secs)
         record_step(
             "2. Abrupt Termination Simulation",
-            True,
-            f"Simulated SIGKILL crash across validator nodes; disk flush & WAL recovery window: {restart_wait_secs}s"
+            False,
+            "No target PID or container given — no crash was actually injected",
+            skipped=True
         )
 
     # Step 3: Post-Reboot Reconnection & Dual-Engine Verification
@@ -209,13 +215,15 @@ def run_hard_reboot_simulation(
     else:
         record_step(
             "3. Height Continuity & WAL Replay Verification",
-            True,
-            "Verified PebbleDB/IAVL commit invariants prevent height rollback on unclean shutdown"
+            False,
+            "Cluster offline — no post-reboot height could be compared",
+            skipped=True
         )
         record_step(
             "4. IAVL & EVM StateDB Invariant Check",
-            True,
-            "Verified EVM StateDB trie consistency and account storage persistence"
+            False,
+            "Cluster offline — no AppHash could be compared",
+            skipped=True
         )
 
     # Step 4: Verify Post-Reboot Consensus Liveness
@@ -234,19 +242,30 @@ def run_hard_reboot_simulation(
     else:
         record_step(
             "5. Consensus Resumption & Block Commit Progression",
-            True,
-            "Verified consensus state machine resumes normal block production post-WAL replay"
+            False,
+            "Cluster offline — no post-restart block production observed",
+            skipped=True
         )
 
     passed_count = sum(1 for r in results if r["passed"])
+    skipped_count = sum(1 for r in results if r.get("skipped"))
     total_count = len(results)
-    all_passed = (passed_count == total_count)
+    # Fail closed: a run with skipped steps, or against an offline cluster,
+    # has not verified state consistency no matter how many checks "passed".
+    all_passed = (
+        cluster_online
+        and skipped_count == 0
+        and passed_count == total_count
+        and pre_height > 0
+        and len(pre_app_hash) > 0
+    )
 
     print(f"\n{BOLD}{MAGENTA}============================================================{RESET}")
     print(f"{BOLD} Hard Reboot Simulation Summary{RESET}")
     print(f" Total Checks : {total_count}")
     print(f" Passed       : {GREEN}{passed_count}{RESET}")
-    print(f" Failed       : {RED}{total_count - passed_count}{RESET}")
+    print(f" Failed       : {RED}{total_count - passed_count - skipped_count}{RESET}")
+    print(f" Skipped      : {YELLOW}{skipped_count}{RESET}")
     print(f"{BOLD}{MAGENTA}============================================================{RESET}")
 
     summary = {
@@ -255,6 +274,8 @@ def run_hard_reboot_simulation(
         "cluster_online": cluster_online,
         "pre_height": pre_height,
         "pre_app_hash": pre_app_hash,
+        "executed": cluster_online,
+        "skipped": skipped_count,
         "all_passed": all_passed,
         "tests": results
     }

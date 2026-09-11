@@ -1,5 +1,20 @@
 # Fork Audit: MANTRA-Chain/evm v0.6.2-v8-mantra-1 vs cosmos/evm
 
+> ⚠️ **Stale header, re-pinned since this audit ran (noted 2026-09-11, issue #37).**
+> `go.mod` no longer says what the two bullets below say. The current state is:
+>
+> - `go.mod:14`: `replace github.com/cosmos/evm => github.com/Worldstreet-Web-Services/evm v0.6.2-ark-1`
+> - `go.mod:67`: `github.com/cosmos/evm v0.6.2` — the stale nominal `v0.6.0` flagged
+>   below has since been corrected, so that preliminary finding is resolved.
+>
+> `Worldstreet-Web-Services/evm v0.6.2-ark-1` is Ark's re-tag of the same patch set
+> this audit examined, so **the findings below still apply** — but the artifact named
+> in the title is not the one Ark builds, and a future re-audit should diff against
+> the `-ark-1` tag directly. That repo is public, so it can be read without fork
+> access. The audit also predates the `0x…0803` vesting finding (#37), which is an
+> inherited upstream defect rather than fork drift and so would not have shown up in
+> a fork-vs-upstream diff at all.
+
 ## Setup verification
 
 - ArkConstellation's `go.mod` line 67: `github.com/cosmos/evm v0.6.0` (the nominal/declared upstream version)

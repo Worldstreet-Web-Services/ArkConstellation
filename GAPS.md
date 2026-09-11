@@ -10,7 +10,7 @@ What's still open, blocking, or needs a follow-up decision. See `STATUS.md` for 
 ## Decisions made this session that need explicit sign-off, not silent adoption
 
 - ~~Mainnet EVM chain-id proposed as `ark_9001-1`~~ — **superseded.** `docs/decisions/module-and-config-decisions.md` #7 locks mainnet EVM chain-id to `11199` (Cosmos chain-id `arkconstellation-1`, #6). This is already correctly wired in code, not just documented: `app/config.go`'s `EVMChainIDMap["arkconstellation-1"] = 11199`, resolved automatically at node startup from the genesis chain-id (`init()` in that file) — no manual `app.toml` step needed for a standard mainnet node. Devnet's `arkdevnet_9000-1` maps to EVM chain-id `9000`, also already present in that same map.
-- **Precompile audit recommends enabling all 10** (see `STATUS.md`'s table) — reasoned, but review-and-agree, not rubber-stamp, especially Staking and ICS20 (flagged for Eng 3 chaos coverage specifically).
+- ~~**Precompile audit recommends enabling all 10** (see `STATUS.md`'s table)~~ — **resolved 2026-09-11 (issue #37), and the "review-and-agree, not rubber-stamp" caution was justified: one of the 10 was wrong.** `0x…0803` (Vesting) is advertised in `evmtypes.AvailableStaticPrecompiles` but has no implementation in the fork, and activating it makes `GetStaticPrecompileInstance` panic on first call — reachable over unauthenticated `eth_call`, and accepted by both `ValidatePrecompiles` and `validate-genesis`. The decided set is **9**, recorded in `docs/decisions/module-and-config-decisions.md` with rationale in `docs/decisions/proposals/precompile-enablement-proposal.md`. Staking, ICS20 and `distrclaim` still need Eng 3 coverage and that now blocks `v1.0.0` explicitly rather than sitting as a flag.
 - **`skip-mev/feemarket` config kept at vendored defaults** rather than tuned — reasoned against the gasless/Paymaster goal, but never load-tested against real Paymaster relay traffic patterns.
 
 ## Explicitly flagged, not fixed (out of this track's asked-for scope)
@@ -144,6 +144,50 @@ value for from the genesis/consensus track. **Recommend Eng 1 either fix
 dead/superseded — as written it's a landmine for the next person who
 assumes `mantrachaind init` does what that function's name implies.**
 
+## The same bug class recurred in `App.DefaultGenesis()` (2026-09-11, issue #37)
+
+The `NewDefaultGenesisState()` landmine above was deleted, but **the surviving
+`App.DefaultGenesis()` in `app/app.go` had exactly the same defect**, and it cost a
+launch-blocking gap that a full audit cycle missed.
+
+`App.DefaultGenesis()` populated `evm.params.active_static_precompiles`. `arkd init`
+never calls it — `cmd/arkd/cmd/commands.go` wires `genutilcli.InitCmd(basicManager, …)`,
+which uses the SDK `BasicManager` defaults, and the evm module's own default for that
+field is nil. The only callers are `app/test_helpers.go` and `tests/e2e/chain.go`.
+
+So **the test suite ran with all precompiles active while every committed genesis file
+had `[]`.** A precompile audit, a Slither run and a chaos sign-off all passed without
+anyone calling a precompile on a chain built the way mainnet is built. Fixed in #37:
+the active set now lives in `app/precompiles.go` with a test asserting the four
+committed genesis files match it and that every address resolves in a booted app's
+keeper.
+
+**The generalisable lesson, worth applying beyond this field:** any `App`-level method
+that looks like it customises genesis should be assumed dead until someone greps `cmd/`
+for its caller. Two of two such methods in this repo were. `app/genesis.go`'s comment
+already says `arkd init`'s output "should be treated as generic SDK/EVM defaults, not a
+finished genesis" — that is correct and load-bearing, and it means every field that
+matters must be in a merge-patch overlay, asserted by test, or both.
+
+### Two adjacent items surfaced by that work — own issues, not fixed in #37
+
+- **`app/token_pair.go`'s `WTokenContractMainnet` is the zero address**, and
+  `App.DefaultGenesis()` registers it as a native ERC20 precompile
+  (`erc20GenState.NativePrecompiles`). SEC-01 above records the zero address as the
+  *resolution* for removing MANTRA's real mainnet address, which was right as far as it
+  went — but registering `0x0000…0000` as a native precompile is not a finished state,
+  it is a placeholder that now only survives because that code path is dead. If anyone
+  wires `App.DefaultGenesis()` into `init` (the obvious "fix" for the bug above), this
+  ships. Same for `ExampleTokenPairs`.
+- **Upstream `cosmos/evm` advertises a precompile it does not implement.**
+  `evmtypes.AvailableStaticPrecompiles` contains `VestingPrecompileAddress` (`0x…0803`)
+  with no `precompiles/vesting` package behind it, `ValidatePrecompiles` does not
+  cross-check the keeper's map, and `evmd/genesis.go` activates the whole list
+  wholesale — so the reference app ships a remotely triggerable panic. That is an
+  upstream defect rather than fork drift, which is why the `Ark-Evm` fork audit did not
+  catch it: a fork-vs-upstream diff cannot show a bug both sides share. Worth an
+  upstream issue.
+
 ## A second discovered requirement: `bank.denom_metadata` is not cosmetic
 
 The EVM module's `InitGenesis` panics at node startup —
@@ -218,13 +262,15 @@ for this value instead of re-declaring a second, driftable copy inline.
   decision that has not been made. Flagged prominently in that file's own
   header comment and in `networks/mainnet/RUNBOOK.md`'s pre-flight
   checklist so this can't be missed at genesis-day time.
-- **EVM precompile decisions (decision doc's table) are still all `⏳`
-  pending** in `docs/decisions/module-and-config-decisions.md`, despite
-  `STATUS.md` (Eng 1's track) already containing a full precompile audit
-  with reasoned recommendations. These two documents are currently out of
-  sync — worth whoever owns the decisions doc copying Eng 1's findings in
-  and getting real sign-off, rather than treating `STATUS.md`'s audit as
-  itself the decision.
+- ~~**EVM precompile decisions (decision doc's table) are still all `⏳`
+  pending**~~ — **resolved 2026-09-11 (issue #37).** The decision doc's table is
+  filled in and the two documents agree. Copying `STATUS.md`'s findings across
+  turned out not to be the right move: the audit recommended a 10th precompile
+  (`0x…0803` Vesting) that has no implementation and panics when called, so the
+  decision is 9 and `STATUS.md` now carries a superseded-by notice.
+  **Still open from this item:** `distrclaim` (`0x…0a01`) is Ark-original and has
+  never had a security review — it is one of three Eng 3 items now recorded as
+  blocking `v1.0.0` in `docs/decisions/proposals/precompile-enablement-proposal.md`.
 - **Admin/upgrade multisig (decision #17) is pending Eng 4's Day 3 key
   ceremony** — out of this track's scope, noted here only so it isn't
   mistaken for something this track's genesis files already handle. No

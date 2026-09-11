@@ -243,7 +243,11 @@ This has three consequences worth internalising:
    MANTRA's `SetBalanceWithLocked` hardening (§6.3) is exactly one of these.
 3. **Precompiles are your Cosmos modules exposed to Solidity.** A contract can call
    `0x...0800` and delegate stake. This is a genuine feature and a genuine attack
-   surface — the ICS20 precompile is what the Saga exploit went through.
+   surface — the ICS20 precompile is what the Saga exploit went through. Which ones are
+   live is a governance param (`evm.params.active_static_precompiles`), not a build-time
+   constant — but an address must be registered in `app/app.go` at build time before any
+   proposal can safely activate it. Activating an unregistered address panics the node
+   on call, which is why `0x...0803` is excluded (§10 row 10).
 
 ### 3.5 Gas and fees, in this chain specifically
 
@@ -824,10 +828,14 @@ is not urgent — but it is a standing item for the next re-pin, and you depend 
 ### D. Worth a test, not a fix
 
 - **EIP-7623 post-refund gas floor** — see §6.2. Highest-value fuzzing target in the tree.
-- **Precompile coverage.** All 10 precompiles are recommended "Enable," with Staking and
-  ICS20 flagged for chaos coverage. ICS20 is the one with a $7M exploit in its history.
-  Confirm your chaos suite actually exercises reentrancy paths through it, not just
-  happy-path transfers.
+- **Precompile coverage.** **9** precompiles are active as of 2026-09-11 (#37), not the
+  10 originally recommended — `0x…0803` (Vesting) is advertised by the fork but has no
+  implementation, and activating it panics the node on call. Staking and ICS20 coverage
+  now blocks `v1.0.0` rather than sitting as a flag. ICS20 is the one with a $7M exploit
+  in its history. Confirm your chaos suite actually exercises reentrancy paths through
+  it, not just happy-path transfers — and confirm it calls precompiles on a chain built
+  the way mainnet is built, since the original audit ran against genesis files where
+  `active_static_precompiles` was `[]`.
 - **`_ = ` audit.** Grep both repos for discarded errors (`_ =`) and swallowed returns in
   non-test code. Each one is a place where a failure becomes invisible. The Ark-Evm patch
   introduced two.
@@ -1056,7 +1064,7 @@ Remember to revert before committing.
 | Add a transaction-level control | `app/ante/cosmos.go` **and** `app/ante/evm.go` — both, always |
 | Change a denom or prefix | `app/params/config.go` + `cmd/arkd/main.go` (both — §7-B4) |
 | Change chain ID mapping | `app/config.go` `EVMChainIDMap` |
-| Change genesis parameters | `networks/*/genesis-params.json` — **not** the binary |
+| Change genesis parameters | `networks/*/genesis-params.json` — **not** the binary (exception: `evm.params.active_static_precompiles` is defined in `app/precompiles.go` and the JSON is checked against it by test) |
 | Expose a Cosmos module to Solidity | `app/precompiles/` — model on `distrclaim` |
 | Change EVM execution semantics | the **Ark-Evm** repo, then retag and bump `go.mod`'s replace |
 
@@ -1077,7 +1085,7 @@ Ordered by how expensive they get if deferred.
 | 7 | De-fork strategy for wasmd + connect (audit or replace) | Stranded on unmaintained deps | Not started (§8.2) |
 | 8 | Faucet: cap the account, fix rate limiting, **commit the code** | Testnet drained; unreviewed code | Uncommitted (§7-C2) |
 | 9 | Genesis allocation & vesting proposal → locked | Supply is immutable after block 1 | Drafted, needs sign-off |
-| 10 | Precompile enablement — sign off, do not rubber-stamp | Each one is permanent attack surface | Recommended, not approved |
+| 10 | Precompile enablement — sign off, do not rubber-stamp | Reversible by governance; the *gate* is Eng 3 coverage | ✅ Decided 2026-09-11 (#37): 9 active, `0x…0803` excluded. Eng 3 coverage on Staking/ICS20/`distrclaim` still blocks `v1.0.0` |
 | 11 | Governance timelock duration (decision #14) | — | 🔒 Required, duration TBD |
 | 12 | Independent external audit of the EIP-7623 change | Consensus bug in the gas path | Not scheduled (§6.2) |
 

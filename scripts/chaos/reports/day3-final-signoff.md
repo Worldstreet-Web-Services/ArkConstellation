@@ -12,7 +12,7 @@
 
 Track 3 (Security, Chaos & Smart Contracts) has completed all 3-day sprint mandates for the ArkConstellation sovereign Layer 1 blockchain:
 
-1. **Day 1:** Conducted comprehensive static security analysis (GoSec, Semgrep, Slither) across state machine modules and enabled precompiles; delivered automated JSON-RPC test harness.
+1. **Day 1:** Conducted comprehensive static security analysis (GoSec, Semgrep, Slither) across state machine modules and precompile *interfaces*; delivered automated JSON-RPC test harness. See the correction notice in `day1-static-analysis.md` — the precompiles were not in fact enabled at the time (`active_static_precompiles` was `[]` in every genesis file, fixed in #37), and Slither covered the Solidity harness rather than live dispatch.
 2. **Day 2:** Validated mempool resilience under concurrent transaction bursts, confirmed dynamic EIP-1559 base-fee scaling, proved CometBFT $+2/3$ quorum consensus liveness during 33% validator outages, and verified protocol-level circuit breakers (`cosmossdk.io/x/circuit`).
 3. **Day 3:** Engineered, audited, and verified the production Launch Guardrail smart contract suite (`LaunchGuardrail.sol`), executed simulated hard reboot state-consistency checks across CometBFT and EVM StateDB, and assembled the $T_0$ genesis deployment package for Eng 4.
 
@@ -115,7 +115,8 @@ The following smart contract artifacts and suggested genesis launch parameters a
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ Day 1: Static Analysis & JSON-RPC Test Harness                                   │
 │  - GoSec & Semgrep: 63 Go files scanned (0 fatal errors; triage list delivered)  │
-│  - Slither: 10 enabled precompiles audited in scripts/chaos/contracts/           │
+│  - Slither: 9 precompile interfaces audited in scripts/chaos/contracts/          │
+│    (NOT live dispatch, and none were enabled in genesis then - see #37)          │
 │  - Automated Test Suite: scripts/chaos/rpc-tests.sh & rpc_test_runner.py         │
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ Day 2: Chaos Testing & Adversarial Simulation                                    │

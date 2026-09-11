@@ -18,6 +18,26 @@ already running.
 | File | Proposal | Status |
 |---|---|---|
 | `staking-unbonding-21d.json` | #3 | ✅ Passed 2026-09-04 — 180,000,000 KASH yes / 0 no. `unbonding_time` 300s → 1814400s |
+| `evm-active-precompiles.json` | — | 📝 Drafted, not submitted — activates the 9 registered EVM static precompiles (issue #37) |
+
+`evm-active-precompiles.json` carries one hazard worth repeating outside the file:
+**do not add `0x…0803` (Vesting) to that list.** The fork advertises the address in
+`evmtypes.AvailableStaticPrecompiles` but ships no implementation, and activating
+an address the keeper has no contract for makes `GetStaticPrecompileInstance`
+panic — reachable by any caller over `eth_call`. `ValidatePrecompiles` accepts it
+happily, so nothing upstream of the call site will stop you. `app/precompiles.go`
+carries the full explanation and a test that fails if the exclusion is undone.
+
+Before submitting it, run `arkd query evm params` and diff against the `params`
+block in the file. `MsgUpdateParams` replaces the whole struct, so any field where
+the live chain disagrees with the file gets silently reset to the file's value.
+
+After it passes, confirming the param changed is not the same as confirming the
+precompiles work — verify dispatch, not just state:
+
+```bash
+scripts/chaos/precompile-verify.sh --rpc http://sentry-0:8545 --api http://sentry-0:1317
+```
 
 ## Submitting
 

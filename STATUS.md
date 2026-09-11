@@ -44,18 +44,37 @@ Single local node booted from HEAD:
 
 ### Precompile Audit (`x/vm/types.AvailableStaticPrecompiles` + Ark custom `distrclaim`)
 
-| Precompile | Address | Recommendation | Reason |
+> **Superseded 2026-09-11 by a real decision.** This table was a recommendation; the
+> decision now lives in `docs/decisions/module-and-config-decisions.md`'s "EVM
+> Precompile Decisions" section, with rationale in
+> `docs/decisions/proposals/precompile-enablement-proposal.md`. Two corrections came
+> out of that work (issue #37):
+>
+> - **The recommendation was never applied.** `active_static_precompiles` was `[]`
+>   in every committed genesis file, so none of these were active on any chain built
+>   the way mainnet would be. `app/app.go`'s `DefaultGenesis()` set them, but
+>   `arkd init` does not call it — only the test helpers do.
+> - **Vesting `...0803` was wrong to recommend.** The fork advertises that address
+>   but ships no implementation, and activating it panics the node on first call.
+>   The decided set is **9**, not 10.
+
+| Precompile | Address | Decision | Reason |
 |---|---|---|---|
-| Bech32 | `...0400` | **Enable** | Directly supports the dual bech32/0x address model; zero state access. |
-| Bank | `...0804` | **Enable** | Native-side balance/transfer access without ERC20 wrapper. |
-| Staking | `...0800` | **Enable, flag for Eng 3** | Direct-delegate UX, staking state transitions from EVM. |
-| Distribution | `...0801` | **Enable** | Reward claiming/withdrawal from EVM. |
-| ICS20 | `...0802` | **Enable, flag for Eng 3** | EVM×IBC interop (fork includes critical reentrancy guard). |
-| Gov | `...0805` | **Enable** | On-chain governance voting from EVM. |
-| Vesting | `...0803` | **Enable** | Vesting account queries; low risk. |
-| Slashing | `...0806` | **Enable** | Query + self-service unjail; low risk. |
-| P256 | `...0100` | **Enable** | WebAuthn/passkey signature verification (RIP-7212). |
-| `distrclaim` | `...0a01` | **Enable** | Narrow, single-purpose reward claiming + ERC20 wrapper conversion. |
+| Bech32 | `...0400` | ✅ **Enable** | Directly supports the dual bech32/0x address model; zero state access. |
+| Bank | `...0804` | ✅ **Enable** | Native-side balance/transfer access without ERC20 wrapper. |
+| Staking | `...0800` | ✅ **Enable, Eng 3 coverage blocks `v1.0.0`** | Direct-delegate UX, staking state transitions from EVM. |
+| Distribution | `...0801` | ✅ **Enable** | Reward claiming/withdrawal from EVM. |
+| ICS20 | `...0802` | ✅ **Enable, Eng 3 coverage blocks `v1.0.0`** | EVM×IBC interop (fork includes critical reentrancy guard). |
+| Gov | `...0805` | ✅ **Enable** | On-chain governance voting from EVM. |
+| Vesting | `...0803` | ❌ **Exclude — not implemented** | Advertised in `AvailableStaticPrecompiles`, but the fork has no `precompiles/vesting` package and `DefaultStaticPrecompiles` never registers one. Activating it makes `GetStaticPrecompileInstance` panic, reachable over `eth_call`. `ValidatePrecompiles` and `validate-genesis` both accept it. |
+| Slashing | `...0806` | ✅ **Enable** | Query + self-service unjail; low risk. |
+| P256 | `...0100` | ✅ **Enable** | WebAuthn/passkey signature verification (RIP-7212). |
+| `distrclaim` | `...0a01` | ✅ **Enable, Eng 3 review blocks `v1.0.0`** | Narrow, single-purpose reward claiming + ERC20 wrapper conversion. Ark-original, so it has not had the fork-audit scrutiny the others got. |
+
+The active set now has one definition — `ArkActiveStaticPrecompiles()` in
+`app/precompiles.go` — and `app/precompiles_test.go` fails if any committed genesis
+file drifts from it, if the list is unsorted or uppercased, or if an address is not
+actually registered in a booted app's keeper.
 
 ### `skip-mev/feemarket` Dynamic Fee Configuration
 - **Decision**: Keep defaults (`base_fee_change_denominator: 8`, `elasticity_multiplier: 2`, `min_gas_price: 0`, `base_fee: 10^9` atto-units ≈ 1 gwei) for Paymaster/gasless transaction compatibility.
