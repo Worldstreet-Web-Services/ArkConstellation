@@ -69,6 +69,7 @@ make test-unit
 - **EVM execution:** `cosmos/evm` module, targeting 1–2s block finality
 - **Gas token:** 18-decimal denomination (hard requirement of `cosmos/evm`)
 - **Validator set:** Permissioned at genesis; progressive decentralization post-launch
+- **Account abstraction:** EIP-7702 only. The chain does not deploy an ERC-4337 EntryPoint at either canonical address and runs no bundler, so tooling that submits `UserOperation`s will not work here — use EIP-7702 delegation instead. See decision 18 in the [module & config decisions log](docs/decisions/module-and-config-decisions.md).
 
 ## Contributing
 
