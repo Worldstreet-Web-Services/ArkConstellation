@@ -19,6 +19,7 @@ Checks:
 4. Launch guardrail contracts and hard-reboot state recovery.
 """
 
+import re
 import sys
 import json
 import subprocess
@@ -45,12 +46,20 @@ GENERATED_SUFFIXES = (".pb.go", ".pb.gw.go")
 GUARDRAIL_CONTRACT = "LaunchGuardrail.sol"
 
 # Paths whose changes require fresh Eng 3 evidence: the AnteHandler/circuit
-# breaker wiring under test, the guardrail contracts, and the harnesses
-# themselves. If any of these changed more recently (in commit-graph terms)
-# than the committed evidence, the evidence is stale and must not certify
-# the release.
+# breaker wiring under test, the guardrail contracts, the harnesses
+# themselves (both the Python drivers and any shell wrappers), and the
+# release/gate machinery that produces or enforces this evidence. If any of
+# these changed more recently (in commit-graph terms) than the committed
+# evidence, the evidence is stale and must not certify the release.
 EVIDENCE_PATHS = ("scripts/chaos/reports",)
-SOURCE_PATHS = ("app/ante", "scripts/chaos/contracts", "scripts/chaos/*.py")
+SOURCE_PATHS = (
+    "app/ante",
+    "scripts/chaos/contracts",
+    "scripts/chaos/*.py",
+    "scripts/chaos/*.sh",
+    "scripts/release",
+    ".github/workflows/release.yml",
+)
 
 
 def git_output(args) -> Optional[str]:
@@ -130,30 +139,41 @@ def is_generated(path: str) -> bool:
     return path.endswith(GENERATED_SUFFIXES)
 
 
+# Matches Slither's own filename-bearing keys (filename_relative,
+# filename_short, filename_absolute, filename_used, a "filenames" manifest
+# map, etc.) so a .sol path is only treated as coverage evidence when it
+# names the file a finding/unit is *about* — never when it merely appears
+# inside free-text like a description, an import statement, or a compiler
+# diagnostic message that happens to mention another contract's file.
+FILENAME_KEY_RE = re.compile(r"filename", re.IGNORECASE)
+
+
 def collect_sol_filenames(obj) -> set:
     """
-    Recursively collect every ``*.sol`` basename mentioned anywhere in a
-    parsed Slither JSON document.
+    Recursively collect every ``*.sol`` basename held under a filename-like
+    key anywhere in a parsed Slither JSON document.
 
     Restricting coverage detection to `detectors[].elements[]` (findings
     only) makes a contract that Slither genuinely analyzed but which
     triggered zero findings of any severity indistinguishable from one
     that was never scanned. Slither's `--json-types` can include a
     `compilation_units` section (or other sections) that name every
-    analyzed source file even with no findings; walking the whole
-    document picks those up too, whatever shape they take, without this
-    script having to hardcode a specific Slither schema version.
+    analyzed source file even with no findings; walking the whole document
+    picks those up too, whatever shape they take, without this script
+    having to hardcode a specific Slither schema version — but only values
+    reached through a filename-like key are trusted, so a stray mention in
+    a description string can't manufacture false coverage.
     """
     found = set()
 
-    def walk(node):
+    def walk(node, key_hint: str = ""):
         if isinstance(node, dict):
-            for v in node.values():
-                walk(v)
+            for k, v in node.items():
+                walk(v, k)
         elif isinstance(node, list):
             for v in node:
-                walk(v)
-        elif isinstance(node, str) and node.endswith(".sol"):
+                walk(v, key_hint)
+        elif isinstance(node, str) and node.endswith(".sol") and FILENAME_KEY_RE.search(key_hint):
             found.add(Path(node).name)
 
     walk(obj)

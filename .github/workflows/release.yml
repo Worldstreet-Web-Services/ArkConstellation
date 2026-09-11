@@ -31,13 +31,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Git repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-          ref: ${{ github.event.inputs.release_tag || github.ref }}
-      - name: Validate release_tag input
+      - name: Validate release_tag format
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
@@ -46,6 +40,17 @@ jobs:
             echo "::error::release_tag '$TAG' does not match an allowed release tag pattern (v*.*.*, ark-v*.*.*, ark-v*)."
             exit 1
           fi
+      - name: Checkout Git repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+      - name: Validate release_tag resolves to an existing tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.release_tag }}"
           if ! git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" >/dev/null; then
             echo "::error::release_tag '$TAG' is not an existing git tag — refusing to run the release pipeline against an arbitrary ref."
             exit 1

@@ -88,7 +88,7 @@ class CircuitBreakerTester:
         print(f"  {status} {name}")
         if details:
             print(f"         {details}")
-        self.results.append({"name": name, "passed": passed, "skipped": skipped, "details": details})
+        self.results.append({"name": name, "passed": passed and not skipped, "skipped": skipped, "details": details})
 
     def execute_suite(self) -> Dict[str, Any]:
         print(f"\n{BOLD}{CYAN}============================================================{RESET}")
@@ -137,10 +137,17 @@ class CircuitBreakerTester:
             rejected = (code != 0) or ("circuit breaker" in out.lower()) or ("circuit breaker" in err.lower())
             self.record_test("4. AnteHandler Rejection Verification (Cosmos Path)", rejected, f"Rejected active msg: {out or err}")
 
-            # Test 5: Verify EVM AnteHandler Rejection (EVM Path)
-            # Disable the EVM message type itself, then re-query the on-chain
-            # disabled-list to confirm the circuit breaker module actually
-            # took effect for it (not just that the CLI accepted the command).
+            # Test 5: Circuit Breaker Control Plane Covers the EVM Msg Type
+            # Disables the EVM message type and re-queries the on-chain
+            # disabled-list to confirm x/circuit actually took effect for it
+            # (not just that the CLI accepted the command). This proves the
+            # message type is disablable, but — unlike Test 4, which submits
+            # a real MsgSend and observes its rejection — it does not submit
+            # an actual MsgEthereumTx, so it cannot by itself prove
+            # app/ante/evm.go's CircuitBreakerDecorator rejects one at
+            # runtime. Submitting a real signed EVM tx here would require an
+            # eth-signing dependency this harness doesn't otherwise need;
+            # tracked as a follow-up rather than done speculatively.
             code, out, err = self.run_cli([
                 "tx", "circuit", "disable", evm_msg_url,
                 "--from", self.admin_key,
@@ -149,11 +156,12 @@ class CircuitBreakerTester:
             ])
             evm_disable_accepted = code == 0
             dlist_after_evm_disable = self.get_disabled_list() if evm_disable_accepted else []
-            evm_rejected = evm_disable_accepted and evm_msg_url in dlist_after_evm_disable
+            evm_disabled_onchain = evm_disable_accepted and evm_msg_url in dlist_after_evm_disable
             self.record_test(
-                "5. AnteHandler Rejection Verification (EVM Path)",
-                evm_rejected,
-                f"Disable exit code: {code}; disabled-list after: {dlist_after_evm_disable}"
+                "5. Circuit Breaker Disables EVM Msg Type (control-plane only)",
+                evm_disabled_onchain,
+                f"Disable exit code: {code}; disabled-list after: {dlist_after_evm_disable} "
+                f"(control-plane check only — does not submit a MsgEthereumTx)"
             )
 
             # Reset the EVM message type so the cluster isn't left disabled.
