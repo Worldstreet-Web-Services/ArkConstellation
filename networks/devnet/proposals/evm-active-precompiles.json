@@ -1,0 +1,80 @@
+{
+  "_comment": [
+    "Activates the 9 EVM static precompiles on arkdevnet_9000-1, matching the",
+    "mainnet launch set. Without this the chain's Cosmos modules are unreachable",
+    "from Solidity: no delegating, reward claiming, IBC transfer, bank send, or",
+    "governance vote from a contract. See issue #37.",
+    "",
+    "DECIDED: enable every precompile actually registered by the binary. The set",
+    "is a module param, so governance can narrow it later without a coordinated",
+    "binary upgrade — which is why enabling the full working set at launch is the",
+    "reversible choice, not the risky one. Rationale per precompile lives in",
+    "docs/decisions/proposals/precompile-enablement-proposal.md.",
+    "",
+    "0x...0803 (Vesting) is DELIBERATELY ABSENT and must not be added. The fork",
+    "advertises that address in evmtypes.AvailableStaticPrecompiles but ships no",
+    "implementation for it, and activating an address the keeper has no contract",
+    "for makes GetStaticPrecompileInstance panic (\"precompiled contract not",
+    "stored in memory\") — reachable by anyone over eth_call. ValidatePrecompiles",
+    "does not catch this; see app/precompiles.go and its test.",
+    "",
+    "MsgUpdateParams replaces the params struct wholesale — every field must be",
+    "present, not just the one being changed. Values below are the live devnet",
+    "params with active_static_precompiles populated and nothing else. CONFIRM",
+    "against `arkd query evm params` before submitting: if the live chain differs",
+    "from what is written here, this proposal will silently reset those fields.",
+    "",
+    "Submit:  arkd tx gov submit-proposal \\",
+    "           networks/devnet/proposals/evm-active-precompiles.json \\",
+    "           --from <key> --chain-id arkdevnet_9000-1 \\",
+    "           --gas auto --gas-adjustment 1.5 --gas-prices 1000000000esp",
+    "",
+    "The gas price is not optional and not the value the node advertises — see",
+    "this directory's README for the full explanation.",
+    "",
+    "Verify:  arkd query evm params",
+    "Then actually call them: deploy scripts/chaos/contracts/Precompiles.sol's",
+    "PrecompileHarness and exercise each address. A populated param list only",
+    "proves the param was set, not that dispatch works."
+  ],
+  "messages": [
+    {
+      "@type": "/cosmos.evm.vm.v1.MsgUpdateParams",
+      "authority": "ark10d07y265gmmuvt4z0w9aw880jnsr700j2cu5hn",
+      "params": {
+        "evm_denom": "esp",
+        "extra_eips": [],
+        "evm_channels": [],
+        "access_control": {
+          "create": {
+            "access_type": "ACCESS_TYPE_PERMISSIONLESS",
+            "access_control_list": []
+          },
+          "call": {
+            "access_type": "ACCESS_TYPE_PERMISSIONLESS",
+            "access_control_list": []
+          }
+        },
+        "active_static_precompiles": [
+          "0x0000000000000000000000000000000000000100",
+          "0x0000000000000000000000000000000000000400",
+          "0x0000000000000000000000000000000000000800",
+          "0x0000000000000000000000000000000000000801",
+          "0x0000000000000000000000000000000000000802",
+          "0x0000000000000000000000000000000000000804",
+          "0x0000000000000000000000000000000000000805",
+          "0x0000000000000000000000000000000000000806",
+          "0x0000000000000000000000000000000000000a01"
+        ],
+        "history_serve_window": "8192",
+        "extended_denom_options": {
+          "extended_denom": "espees"
+        }
+      }
+    }
+  ],
+  "metadata": "Activate the 9 registered EVM static precompiles on arkdevnet",
+  "deposit": "1000000000000000000esp",
+  "title": "Activate EVM static precompiles (staking, bank, gov, distribution, ICS20, slashing, p256, bech32, distrclaim)",
+  "summary": "Populates evm.params.active_static_precompiles with the 9 precompiles the binary actually registers, making the chain's Cosmos modules callable from Solidity. Excludes 0x...0803 (Vesting), which the fork advertises but does not implement — activating it panics the node on call. Mirrors the mainnet launch set so the devnet is representative."
+}

@@ -1298,12 +1298,12 @@ func (app *App) DefaultGenesis() map[string]json.RawMessage {
 	genesis[minttypes.ModuleName] = app.appCodec.MustMarshalJSON(mintGenState)
 
 	// Add EVM genesis configuration
+	//
+	// NOTE: this must be ArkActiveStaticPrecompiles(), not
+	// evmtypes.AvailableStaticPrecompiles - the latter contains an address with no
+	// implementation behind it, which panics when called. See app/precompiles.go.
 	evmGenState := evmtypes.DefaultGenesisState()
-	evmGenState.Params.ActiveStaticPrecompiles = append([]string{}, evmtypes.AvailableStaticPrecompiles...)
-	evmGenState.Params.ActiveStaticPrecompiles = append(
-		evmGenState.Params.ActiveStaticPrecompiles,
-		distrclaim.DistributionClaimPrecompileAddress,
-	)
+	evmGenState.Params.ActiveStaticPrecompiles = ArkActiveStaticPrecompiles()
 	genesis[evmtypes.ModuleName] = app.appCodec.MustMarshalJSON(evmGenState)
 
 	// Add ERC20 genesis configuration

@@ -70,11 +70,16 @@ jobs:
         # JSON-merge-patch overlay (see its _comment) covered by the
         # genesis-sync job instead, and genesis-params.json holds only the
         # subset of params proposed for mainnet genesis, not a full genesis.
+        #
+        # scripts/genesis/rehearsal/base-genesis.json is included too: it IS a
+        # complete genesis document but sits outside networks/, so it was never
+        # validated here (noticed while fixing issue #37).
         run: |
           shopt -s nullglob
           found=0
           status=0
-          for f in networks/*/genesis*.json; do
+          for f in networks/*/genesis*.json scripts/genesis/rehearsal/base-genesis.json; do
+            [ -e "$f" ] || continue
             case "$f" in
               networks/devnet/genesis-template.json|networks/mainnet/genesis-params.json)
                 continue
@@ -103,3 +108,38 @@ jobs:
         # different parameters than the ones a human reviewed. `make devnet-init`
         # depends on it locally; until now nothing ran it on a pull request.
         run: python3 networks/devnet/check-genesis-sync.py
+
+  precompiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Install libwasmvm shared library
+        # app.Setup* boots a real App, which links against libwasmvm. Same
+        # install as the validate-genesis job - see its comment for why the
+        # version is read out of go.mod rather than pinned here.
+        run: |
+          WASMVM_VERSION=$(grep -E 'github.com/CosmWasm/wasmvm/v[0-9]+ ' go.mod | awk '{print $2}')
+          if [ -z "$WASMVM_VERSION" ]; then
+            echo "::error::could not determine wasmvm version from go.mod" >&2
+            exit 1
+          fi
+          echo "Installing libwasmvm ${WASMVM_VERSION}"
+          sudo curl -fsSL -o /usr/lib/x86_64-linux-gnu/libwasmvm.x86_64.so \
+            "https://github.com/CosmWasm/wasmvm/releases/download/${WASMVM_VERSION}/libwasmvm.x86_64.so"
+          sudo ldconfig
+      - name: EVM static precompile invariants
+        # The one check that covers the gap issue #37 came out of: nothing
+        # structural catches an empty or wrong active_static_precompiles.
+        # `genesis validate-genesis` passes on an empty list (the chain just
+        # boots with every Cosmos module unreachable from Solidity), and it
+        # passes on an address the binary doesn't register - which then panics
+        # on first call, reachable over unauthenticated eth_call.
+        #
+        # These tests assert the list is sorted and lowercase, that every
+        # address resolves in a booted app's EVM keeper, that 0x...0803 still
+        # panics when activated (so the exclusion can't be quietly undone), and
+        # that all four committed genesis files match app/precompiles.go.
+        run: go test ./app/ -run 'Precompile|GenesisFilesMatch' -v

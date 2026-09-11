@@ -209,19 +209,30 @@ When a decision is made, update the Status column with ✅ Keep, ❌ Strip, or �
 
 ---
 
-## EVM Precompile Decisions
+## EVM Precompile Decisions — 🔒 9 active, decided 2026-09-11
 
-> To be filled in by Eng 1 after inspecting `app/app.go` for registered precompiles.
+Full rationale: [`proposals/precompile-enablement-proposal.md`](proposals/precompile-enablement-proposal.md). Tracked as issue #37.
 
-| Precompile | Status | Decision | Notes |
-|------------|--------|----------|-------|
-| Staking precompile | ⏳ | — | Allows staking ops from Solidity |
-| Bank precompile | ⏳ | — | Allows token transfers from Solidity |
-| IBC precompile | ⏳ | — | Relevant — IBC is enabled at genesis |
-| Distribution precompile | ⏳ | — | Allows claiming staking rewards from Solidity |
-| Gov precompile | ⏳ | — | Allows governance votes from Solidity |
+**Decision:** activate every static precompile the binary actually registers — 9 addresses. The set lives in `app/precompiles.go` as `ArkActiveStaticPrecompiles()`, and `app/precompiles_test.go` enforces that the four committed genesis files match it.
+
+| Precompile | Address | Status | Decision | Notes |
+|------------|---------|--------|----------|-------|
+| P256 (RIP-7212) | `0x…0100` | 🔒 | ✅ Enable | Stateless pure compute. WebAuthn/passkey verification. |
+| Bech32 | `0x…0400` | 🔒 | ✅ Enable | Stateless pure compute. Load-bearing for the dual bech32/0x address model. |
+| Staking | `0x…0800` | 🔒 | ✅ Enable | Staking ops from Solidity. **Eng 3 chaos coverage blocks `v1.0.0`** — highest-risk entry in the set. |
+| Distribution | `0x…0801` | 🔒 | ✅ Enable | Reward and commission withdrawal from Solidity. |
+| ICS20 | `0x…0802` | 🔒 | ✅ Enable | EVM×IBC transfers. **Eng 3 reentrancy coverage blocks `v1.0.0`** — the Saga exploit went through an ICS20 precompile; the fork carries the nested-forwarding guard. |
+| Bank | `0x…0804` | 🔒 | ✅ Enable | Native balance reads and sends without an ERC20 wrapper. |
+| Gov | `0x…0805` | 🔒 | ✅ Enable | Governance votes and deposits from Solidity. |
+| Slashing | `0x…0806` | 🔒 | ✅ Enable | Signing-info queries and self-service unjail. |
+| `distrclaim` | `0x…0a01` | 🔒 | ✅ Enable | Ark-original, not upstream. Narrow single purpose. **Eng 3 review blocks `v1.0.0`** — has not had the fork-audit scrutiny the other eight got. |
+| **Vesting** | `0x…0803` | 🔒 | ❌ **Exclude — do not add** | **The fork advertises this address in `evmtypes.AvailableStaticPrecompiles` but ships no implementation for it.** Activating an address the keeper has no contract for makes `GetStaticPrecompileInstance` panic (`"precompiled contract not stored in memory"`), reachable by any caller over `eth_call`. `ValidatePrecompiles` accepts it and `validate-genesis` passes, so nothing catches it before the call. The fork's own `evmd` reference app has this bug. |
 
 > **Rule:** Enable only precompiles with a concrete product use case. Each is a Solidity-callable entry point into chain state — additional attack surface.
+
+**How the Rule was applied, since "enable all registered" can look like it was ignored:** this param is governance-changeable (`authority` is the gov module account, and `app/proposals_whitelisting.go` whitelists every message type), so narrowing the set post-launch costs one proposal and no binary upgrade. Launching with precompiles inert, by contrast, is paid immediately by every integrator and is not recoverable before mainnet. The attack-surface argument therefore buys a **gate** — the three ⏳ Eng 3 items above block `v1.0.0` — rather than a smaller launch set. If those reviews do not land before the binary freezes, remove the unreviewed addresses from genesis; do not launch and review afterwards.
+
+> ⚠️ Adding a precompile after launch is **not** symmetrical with removing one. Removal is a param change. Addition requires the address to be registered in `app/app.go`'s `WithStaticPrecompiles` call — which happens once at construction and panics if called twice — so a genuinely new precompile needs a binary upgrade, and a proposal that activates an unregistered address is the `0x…0803` trap above.
 
 ---
 

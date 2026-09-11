@@ -67,10 +67,11 @@ Deliver a minimal, compiling, and secure blockchain binary stripped of all non-e
 
 ### Precompile Audit
 
-- [ ] List all enabled `cosmos/evm` precompiles (typically in `app/app.go` or `app/evm.go`)
-- [ ] For each precompile, document: what it does, whether it's needed, decision
-- [ ] Disable all non-essential precompiles
-- [ ] Document decisions → `docs/decisions/precompile-decisions.md`
+- [x] List all enabled `cosmos/evm` precompiles (`app/app.go`'s `DefaultStaticPrecompiles` call; the active set is `app/precompiles.go`)
+- [x] For each precompile, document: what it does, whether it's needed, decision
+- [x] Disable all non-essential precompiles — 9 of 10 advertised addresses active; `0x…0803` (Vesting) excluded because the fork advertises it without implementing it, and activating it panics the node on call
+- [x] Document decisions → [`docs/decisions/module-and-config-decisions.md`](../decisions/module-and-config-decisions.md)'s "EVM Precompile Decisions" section, with rationale in [`docs/decisions/proposals/precompile-enablement-proposal.md`](../decisions/proposals/precompile-enablement-proposal.md). (Earlier drafts of this list pointed at `docs/decisions/precompile-decisions.md`; that file was never created and the decision lives in the two above instead of a third location.)
+- [ ] **Eng 3 still owes coverage that blocks `v1.0.0`:** Staking `0x…0800` state transitions, ICS20 `0x…0802` reentrancy, and a first security review of `distrclaim` `0x…0a01`
 
 ### Fee Market Configuration
 
