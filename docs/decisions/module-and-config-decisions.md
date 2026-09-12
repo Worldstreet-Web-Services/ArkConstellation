@@ -225,6 +225,52 @@ When a decision is made, update the Status column with ✅ Keep, ❌ Strip, or �
 
 ---
 
+## Gas Sponsorship (Paymaster) Model
+
+### 18. Paymaster Infrastructure — ⚠️ SUPERSEDED by #19 — ERC-4337 with Minimal EntryPoint
+
+**Decision:** Implement gas sponsorship using ERC-4337 Paymaster pattern with a minimal EntryPoint implementation to fit within EIP-170 contract size limits.
+
+**Rationale:**
+- Native Cosmos `x/feegrant` cannot sponsor EVM transactions (only Cosmos-message path)
+- Standard ERC-4337 EntryPoint (29425 bytes) exceeds EIP-170 limit (24576 bytes) on devnet
+- Custom minimal EntryPoint (6628 bytes) provides essential Paymaster functionality while fitting within size limits
+- ERC-4337 is the industry standard for account abstraction and gas sponsorship
+
+**Implementation Details:**
+- **MinimalEntryPoint:** Custom implementation with essential functions (handleOps, getUserOpHash, depositTo/withdrawTo, nonce management)
+- **SimplePaymaster:** Basic Paymaster contract that sponsors all user operations (MVP - no whitelisting or rate limiting)
+- **Relayer Service:** Node.js service to sign and sponsor UserOperations via handleOps
+- **Deployed Addresses (Devnet):** ~~EntryPoint `0xD6F4B34b519838DA78C03005ccdafFE94F58077E`, SimplePaymaster `0x6493ff1902c0cF198f279726d387c783b83bDe05`~~ — contracts removed, addresses no longer valid, see #19.
+
+**Why superseded:** The 29,425-byte measurement that justified writing a custom EntryPoint was taken with the Solidity optimizer off (`contracts/paymaster/foundry.toml` never set `optimizer = true`). With the optimizer on at its default 200 runs, no via-IR needed, the real EntryPoint compiles to 16,399 bytes — comfortably under the limit. The custom implementation also needed two full review rounds to close real bugs in its hand-rolled reimplementation of signature validation, gas accounting, and reentrancy handling — the exact risk class using an audited contract avoids. See issue #44 for the full investigation and #19 for the replacement.
+
+**Code Location:** `contracts/paymaster/` (separate from core chain codebase)
+
+### 19. Paymaster Infrastructure — 🔒 ERC-4337 with the audited eth-infinitism EntryPoint
+
+**Decision:** Replace the custom `MinimalEntryPoint` from #18 with the real, audited `EntryPoint` and `SimpleAccountFactory`/`SimpleAccount` from `eth-infinitism/account-abstraction` (vendored as a git submodule), with the Solidity optimizer enabled.
+
+**Rationale:**
+- #18's size objection to the real EntryPoint doesn't hold once the optimizer is enabled (16,399 bytes vs. the 24,576 limit — see #18's superseded note).
+- Removes an entire class of hand-rolled-reimplementation risk: signature validation, gas/wei accounting, reentrancy ordering, and postOp/refund handling are now the audited contract's responsibility, not custom logic reviewed and patched twice in PR #28.
+
+**Implementation Details:**
+- **EntryPoint:** `lib/account-abstraction/contracts/core/EntryPoint.sol`, unmodified.
+- **SimpleAccountFactory / SimpleAccount:** `lib/account-abstraction/contracts/accounts/`, unmodified. Senders are now real ERC-4337 smart accounts (deployed via `initCode` on first use), not bare EOAs — this is the real EntryPoint's `IAccount.validateUserOp` requirement, and is a behavior change from #18's model where `sender` was treated as an EOA directly.
+- **SimplePaymaster:** Unchanged in behavior; only its `entryPoint` field's type changed from the local `IMinimalEntryPoint` to the real `IEntryPoint` (its `depositTo`/`withdrawTo` calls are ABI-compatible with both).
+- **Relayer Service:** `contracts/paymaster/relayer/` updated for the real `paymasterAndData` layout (`paymaster || paymasterVerificationGasLimit || paymasterPostOpGasLimit`, not a bare address) and to predict/deploy accounts via `SimpleAccountFactory.getAddress`/`createAccount`.
+- **Deployed Addresses (Devnet):** none yet — **not deployed.** Redeploying is a separate, explicit decision (real gas cost, changes every address recorded elsewhere) that hasn't been made. `contracts/paymaster/relayer/.env.example` has no address defaults until that happens.
+
+**Production Considerations (carried forward from #18, still open):**
+- Add Paymaster access controls (whitelisting, rate limiting, gas cost limits) — `SimplePaymaster` still sponsors all operations unconditionally.
+- Implement robust relayer infrastructure with monitoring and retry logic.
+- Consider EIP-7702 (Account Abstraction) as an alternative for future upgrades.
+
+**Code Location:** `contracts/paymaster/` (separate from core chain codebase)
+
+---
+
 ## Token Distribution (Genesis Allocations)
 
 > Approved total supply: **1,000,000,000 KASH** (one billion). All amounts below sum to this total.
