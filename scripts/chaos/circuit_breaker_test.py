@@ -88,7 +88,7 @@ class CircuitBreakerTester:
         print(f"  {status} {name}")
         if details:
             print(f"         {details}")
-        self.results.append({"name": name, "passed": passed, "skipped": skipped, "details": details})
+        self.results.append({"name": name, "passed": passed and not skipped, "skipped": skipped, "details": details})
 
     def execute_suite(self) -> Dict[str, Any]:
         print(f"\n{BOLD}{CYAN}============================================================{RESET}")
@@ -137,8 +137,40 @@ class CircuitBreakerTester:
             rejected = (code != 0) or ("circuit breaker" in out.lower()) or ("circuit breaker" in err.lower())
             self.record_test("4. AnteHandler Rejection Verification (Cosmos Path)", rejected, f"Rejected active msg: {out or err}")
 
-            # Test 5: Verify EVM AnteHandler Rejection (EVM Path)
-            self.record_test("5. AnteHandler Rejection Verification (EVM Path)", True, f"Verified EVM AnteHandler (app/ante/evm.go) enforces x/circuit for {evm_msg_url}")
+            # Test 5: Circuit Breaker Control Plane Covers the EVM Msg Type
+            # Disables the EVM message type and re-queries the on-chain
+            # disabled-list to confirm x/circuit actually took effect for it
+            # (not just that the CLI accepted the command). This proves the
+            # message type is disablable, but — unlike Test 4, which submits
+            # a real MsgSend and observes its rejection — it does not submit
+            # an actual MsgEthereumTx, so it cannot by itself prove
+            # app/ante/evm.go's CircuitBreakerDecorator rejects one at
+            # runtime. Submitting a real signed EVM tx here would require an
+            # eth-signing dependency this harness doesn't otherwise need;
+            # tracked as a follow-up rather than done speculatively.
+            code, out, err = self.run_cli([
+                "tx", "circuit", "disable", evm_msg_url,
+                "--from", self.admin_key,
+                "--chain-id", self.chain_id,
+                "-y", "-b", "sync", "--gas-prices", "10000000000esp"
+            ])
+            evm_disable_accepted = code == 0
+            dlist_after_evm_disable = self.get_disabled_list() if evm_disable_accepted else []
+            evm_disabled_onchain = evm_disable_accepted and evm_msg_url in dlist_after_evm_disable
+            self.record_test(
+                "5. Circuit Breaker Disables EVM Msg Type (control-plane only)",
+                evm_disabled_onchain,
+                f"Disable exit code: {code}; disabled-list after: {dlist_after_evm_disable} "
+                f"(control-plane check only — does not submit a MsgEthereumTx)"
+            )
+
+            # Reset the EVM message type so the cluster isn't left disabled.
+            code, out, err = self.run_cli([
+                "tx", "circuit", "reset", evm_msg_url,
+                "--from", self.admin_key,
+                "--chain-id", self.chain_id,
+                "-y", "-b", "sync", "--gas-prices", "10000000000esp"
+            ])
 
             # Test 6: Reset Circuit Breaker
             code, out, err = self.run_cli([
@@ -152,41 +184,56 @@ class CircuitBreakerTester:
         else:
             # Offline CLI Construction & AnteHandler Logic Validation
             print(f"\n{YELLOW}[!] Node cluster offline. Validating CLI argument constructions & AnteHandler handlers.{RESET}")
+            # These validate CLI argument construction only. Nothing is executed
+            # against a chain, so they are recorded as skipped rather than passed.
             self.record_test(
                 "2. Initial Circuit Breaker Query Structure",
-                self.binary_available,
-                f"Validated CLI syntax: '{self.binary_path} query circuit disabled-list --node {self.cmt_rpc}'"
+                False,
+                f"Node offline — validated CLI syntax only: '{self.binary_path} query circuit disabled-list --node {self.cmt_rpc}'",
+                skipped=True
             )
             self.record_test(
                 "3. Disable MsgSend Transaction Construction",
-                self.binary_available,
-                f"Validated CLI syntax: '{self.binary_path} tx circuit disable {msg_url} --from {self.admin_key} --chain-id {self.chain_id}'"
+                False,
+                f"Node offline — validated CLI syntax only: '{self.binary_path} tx circuit disable {msg_url}'",
+                skipped=True
             )
             self.record_test(
                 "4. AnteHandler Rejection Logic (Cosmos Path)",
-                True,
-                "Verified app/ante/cosmos.go CircuitBreakerDecorator rejects disabled type URL with code 1"
+                False,
+                "Node offline — app/ante/cosmos.go CircuitBreakerDecorator not exercised",
+                skipped=True
             )
             self.record_test(
                 "5. AnteHandler Rejection Logic (EVM Path)",
-                True,
-                "Verified app/ante/evm.go EVMCircuitBreakerDecorator rejects disabled MsgEthereumTx"
+                False,
+                "Node offline — app/ante/evm.go EVMCircuitBreakerDecorator not exercised",
+                skipped=True
             )
             self.record_test(
                 "6. Reset Circuit Breaker Transaction Construction",
-                self.binary_available,
-                f"Validated CLI syntax: '{self.binary_path} tx circuit reset {msg_url} --from {self.admin_key} --chain-id {self.chain_id}'"
+                False,
+                f"Node offline — validated CLI syntax only: '{self.binary_path} tx circuit reset {msg_url}'",
+                skipped=True
             )
 
         passed_count = sum(1 for r in self.results if r["passed"])
+        skipped_count = sum(1 for r in self.results if r.get("skipped"))
         total_count = len(self.results)
-        all_passed = (passed_count == total_count)
+        # Fail closed: structural CLI validation against an offline node is
+        # not a circuit breaker test.
+        all_passed = (
+            node_online
+            and skipped_count == 0
+            and passed_count == total_count
+        )
 
         print(f"\n{BOLD}{CYAN}============================================================{RESET}")
         print(f"{BOLD} Circuit Breaker Suite Summary{RESET}")
         print(f" Total Tests : {total_count}")
         print(f" Passed      : {GREEN}{passed_count}{RESET}")
-        print(f" Failed      : {RED}{total_count - passed_count}{RESET}")
+        print(f" Failed      : {RED}{total_count - passed_count - skipped_count}{RESET}")
+        print(f" Skipped     : {YELLOW}{skipped_count}{RESET}")
         print(f"{BOLD}{CYAN}============================================================{RESET}")
 
         summary = {
@@ -194,6 +241,8 @@ class CircuitBreakerTester:
             "chain_id": self.chain_id,
             "binary": self.binary_path,
             "node_online": node_online,
+            "executed": node_online,
+            "skipped": skipped_count,
             "total": total_count,
             "passed": passed_count,
             "all_passed": all_passed,

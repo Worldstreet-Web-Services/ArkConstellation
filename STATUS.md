@@ -27,7 +27,7 @@
    - `EVMChainIDMap`: Mapped `"arkconstellation-1": 11199` (locked Decisions #6 & #7) and `"arkdevnet_9000-1": 9000`.
    - `IBC Unwrap Memo`: `{"ark":{"unwrap":true}}`.
 6. **Fork Audits Completed**:
-   - `MANTRA-Chain/cosmos-sdk@v0.53.6-v8-mantra-1` vs upstream `v0.53.6` documented in `docs/proof/fork-audit-cosmos-sdk.md`.
+   - `MANTRA-Chain/cosmos-sdk@v0.53.8-v8-mantra-1` (the currently-pinned tag; full commit hash and lockstep `cosmossdk.io/api` pin are authoritative in `docs/proof/fork-audit-cosmos-sdk.md`, not re-typed here) vs upstream `v0.53.8` documented in `docs/proof/fork-audit-cosmos-sdk.md`. Supersedes the original `v0.53.6-v8-mantra-1` vs `v0.53.6` audit, retained in the same document as the baseline diff.
    - `MANTRA-Chain/evm@v0.6.2-v8-mantra-1` vs upstream `v0.6.2` documented in `docs/proof/fork-audit-cosmos-evm.md` (confirming critical ICS20 reentrancy guard).
 
 ### Smoke Test Verification
@@ -59,6 +59,15 @@ Single local node booted from HEAD:
 
 ### `skip-mev/feemarket` Dynamic Fee Configuration
 - **Decision**: Keep defaults (`base_fee_change_denominator: 8`, `elasticity_multiplier: 2`, `min_gas_price: 0`, `base_fee: 10^9` atto-units ≈ 1 gwei) for Paymaster/gasless transaction compatibility.
+
+  > ⚠️ **The live devnet does not match this.** `/cosmos/evm/feemarket/v1/params` on
+  > `arkdevnet_9000-1` returns `min_gas_price: 1000000000`, not `0`, as of 2026-09-04.
+  > A non-zero chain-wide floor means genuinely zero-fee sponsored transactions are
+  > not possible — a paymaster still pays 1 gwei per gas unit. That is directly
+  > relevant to #28 (ERC-4337 Paymaster). Either the decision changed and this line
+  > is stale, or genesis did not apply it. **Left as-is deliberately rather than
+  > edited to match the chain** — this records an intent, and whoever owns it should
+  > decide which of the two is wrong.
 
 ### Eng 3 Dependency & Next Tags
 - Blocked on Eng 3 (Security/Chaos) reporting before tagging `ark-v1.0.0-rc1`.

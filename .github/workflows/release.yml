@@ -24,8 +24,55 @@ permissions:
   id-token: write           # (required for OIDC token used by attest-build-provenance)
 
 jobs:
+  verify-security-gate:
+    name: Verify Eng 3 Security & Chaos Sign-Off
+    # Release evidence is only required when actually cutting a release. PR
+    # snapshot builds must not be blocked by missing chaos artifacts.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release_tag format
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          TAG="$RELEASE_TAG"
+          if ! [[ "$TAG" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+|ark-v[0-9]+(\.[0-9]+){0,2}(-rc[0-9]+)?)$ ]]; then
+            echo "::error::release_tag '$TAG' does not match an allowed release tag pattern (v*.*.*, ark-v*.*.*, ark-v*)."
+            exit 1
+          fi
+      - name: Checkout Git repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+      - name: Validate release_tag resolves to an existing tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          TAG="$RELEASE_TAG"
+          if ! git rev-parse --verify --quiet "refs/tags/$TAG^{commit}" >/dev/null; then
+            echo "::error::release_tag '$TAG' is not an existing git tag — refusing to run the release pipeline against an arbitrary ref."
+            exit 1
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Eng 3 Release Gate Verification
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
+        run: python3 scripts/release/verify-eng3-signoff.py "$RELEASE_TAG"
+
   build:
     name: Build - ${{ matrix.platform.name }}
+    needs: [verify-security-gate]
+    # A skipped `needs` job skips its dependents by default, so the gate being
+    # skipped on pull_request would otherwise kill PR builds entirely.
+    if: ${{ !cancelled() && (needs.verify-security-gate.result == 'success' || needs.verify-security-gate.result == 'skipped') }}
     runs-on: ${{ matrix.platform.runner || 'chain-runner' }}
     strategy:
       matrix:

@@ -56,6 +56,9 @@ import (
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_4"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_5"
 	"github.com/MANTRA-Chain/mantrachain/v8/client/docs"
+	denommetadatakeeper "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/keeper"
+	denommetadatamodule "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/module"
+	denommetadatatypes "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/types"
 	govtimelock "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
 	govtimelockkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
 	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
@@ -278,6 +281,7 @@ type App struct {
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 	CircuitKeeper         circuitkeeper.Keeper // emergency pause: cosmossdk.io/x/circuit, wired via SetCircuitBreaker below
 	SanctionKeeper        sanctionkeeper.Keeper
+	DenomMetadataKeeper   denommetadatakeeper.Keeper
 	GovTimelockKeeper     govtimelockkeeper.Keeper
 
 	// IBC
@@ -470,6 +474,16 @@ func New(
 		appCodec,
 		runtime.NewKVStoreService(keys[sanctiontypes.StoreKey]),
 		logger,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	// x/denommetadata: a governance-gated write path into x/bank's metadata
+	// store. It takes no store key because it owns no state — x/bank remains the
+	// source of truth. See x/denommetadata/README.md for why it exists.
+	app.DenomMetadataKeeper = denommetadatakeeper.NewKeeper(
+		appCodec,
+		logger,
+		app.BankKeeper,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
@@ -873,6 +887,7 @@ func New(
 		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		circuit.NewAppModule(appCodec, app.CircuitKeeper),
 		sanction.NewAppModule(appCodec, app.SanctionKeeper),
+		denommetadatamodule.NewAppModule(appCodec, app.DenomMetadataKeeper),
 		// non sdk modules
 		wasm.NewAppModule(appCodec, &app.WasmKeeper, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.MsgServiceRouter(), nil),
 		ibc.NewAppModule(app.IBCKeeper),
@@ -945,6 +960,7 @@ func New(
 		wasmtypes.ModuleName,
 		providertypes.ModuleName,
 		sanctiontypes.ModuleName,
+		denommetadatatypes.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
@@ -967,6 +983,7 @@ func New(
 		wasmtypes.ModuleName,
 		providertypes.ModuleName,
 		sanctiontypes.ModuleName,
+		denommetadatatypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -996,6 +1013,7 @@ func New(
 		consensusparamtypes.ModuleName,
 		circuittypes.ModuleName,
 		sanctiontypes.ModuleName,
+		denommetadatatypes.ModuleName,
 		ibcexported.ModuleName,
 
 		// Cosmos EVM modules
