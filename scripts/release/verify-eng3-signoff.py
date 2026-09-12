@@ -26,7 +26,7 @@ script can distinguish that from a genuine Eng 3 run — see the check-0
 comment below for what it would actually take to close that gap. This gate
 raises the bar against stale/incomplete/self-contradicting evidence; it is
 not a substitute for code review or a signed, independently-produced
-attestation.
+attestation. Tracked as issue #43.
 """
 
 import re
@@ -268,8 +268,8 @@ def verify_gate(target_tag: str = "") -> bool:
     #       already used elsewhere in this workflow for release binaries),
     #       verified here instead of trusting file contents.
     # Both are deliberate, repo-wide policy/infrastructure decisions and are
-    # explicitly out of scope for this gate script — tracked as a follow-up,
-    # not implemented here.
+    # explicitly out of scope for this gate script — tracked as a follow-up
+    # in issue #43, not implemented here.
     print(f"{BOLD}0. Verifying Eng 3 Evidence Is Bound To The Release Commit...{RESET}")
     target_commit = resolve_commit(target_tag) if target_tag else None
     if target_commit is None:
