@@ -103,3 +103,12 @@ jobs:
         # different parameters than the ones a human reviewed. `make devnet-init`
         # depends on it locally; until now nothing ran it on a pull request.
         run: python3 networks/devnet/check-genesis-sync.py
+      - name: Mainnet genesis draft drift check
+        # genesis-params.json is the patch RUNBOOK Step 1 merges into the real
+        # mainnet genesis; genesis-DRAFT.json is the full document people read
+        # to see what mainnet will look like. Both are hand-maintained with no
+        # build step between them, so this asserts the patch is a subset of the
+        # draft under the runbook's merge semantics, that no _comment is nested
+        # anywhere, and that evm preinstalls are EIP-55 checksummed and disjoint
+        # from evm accounts (#35, #36).
+        run: python3 networks/mainnet/check-genesis-sync.py
