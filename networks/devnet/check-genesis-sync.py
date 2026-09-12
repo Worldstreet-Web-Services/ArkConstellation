@@ -15,8 +15,10 @@ human reviewed in the other.
 Separately, active_static_precompiles (the list that was empty since
 genesis - see proposals/activate-static-precompiles.json for the incident)
 is hardcoded verbatim in three more files with no shared source: the devnet
-proposal, the mainnet genesis draft, and the rehearsal fixture. Nothing but
-this check stops one of them drifting from the others.
+proposal, the mainnet genesis draft, and the rehearsal fixture. This check
+catches the copies drifting from each other without needing a Go toolchain;
+app/precompiles_test.go is the authoritative check that they all match what
+app.go actually registers with the EVM keeper.
 """
 import json
 import sys
@@ -50,6 +52,13 @@ def get_precompiles(doc, source):
         sys.exit(f"error: {source} missing app_state.evm.params.active_static_precompiles: {e}")
 
 
+def as_address_set(addrs, source):
+    lowered = [a.lower() for a in addrs]
+    if len(set(lowered)) != len(lowered):
+        sys.exit(f"error: {source} lists a precompile address more than once: {addrs}")
+    return set(lowered)
+
+
 def check_precompile_list_sync(template):
     source_list = get_precompiles(template, TEMPLATE_PATH)
     if not source_list:
@@ -57,6 +66,7 @@ def check_precompile_list_sync(template):
             f"error: {TEMPLATE_PATH}'s active_static_precompiles is empty - "
             "nothing to sync the other copies against."
         )
+    source_set = as_address_set(source_list, TEMPLATE_PATH)
 
     mainnet_draft = load_json(MAINNET_DRAFT_PATH)
     rehearsal = load_json(REHEARSAL_PATH)
@@ -75,7 +85,11 @@ def check_precompile_list_sync(template):
         (REHEARSAL_PATH, get_precompiles(rehearsal, REHEARSAL_PATH)),
         (PROPOSAL_PATH, proposal_list),
     ]
-    mismatches = [(path, lst) for path, lst in candidates if lst != source_list]
+    # Activation is a set: order is irrelevant on-chain, so don't fail on a reorder.
+    mismatches = [
+        (path, lst) for path, lst in candidates
+        if as_address_set(lst, path) != source_set
+    ]
     if mismatches:
         details = "\n\n".join(
             f"{path}:\n{json.dumps(lst, indent=2)}" for path, lst in mismatches

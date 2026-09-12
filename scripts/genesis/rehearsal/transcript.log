@@ -10,7 +10,7 @@ ACCEPT  valid-1.json  (moniker=v1, self-delegation=9000000000000000000esp)
 
 Summary: 2 accepted, 2 rejected
 WARNING: sonic/ast only supports (go1.17~1.26 and amd64 CPU) or (go1.20~1.26 and arm64 CPU), but your environment is not suitable and will fallback to encoding/json
-File at /var/folders/ym/kkqv45r10mq_mn0589pkthhh0000gn/T/tmp.cBh80clewr/compile/config/genesis.json is a valid genesis file
+File at /var/folders/18/bff7m2550r9098b9w8rw4h580000gn/T/tmp.iJn0TYkgqB/compile/config/genesis.json is a valid genesis file
 
 Compiled genesis written to: /tmp/rehearsal-out/genesis-template.json
 Validators included: 2
@@ -26,8 +26,8 @@ file:             /tmp/rehearsal-out/genesis-template.json
 chain_id:         arkmainnet_9001-1
 genesis_time:     2026-08-22T20:10:11.421154Z
 
-raw bytes sha256:       1e83fb5ad69ab32dc31f5bf424e64e5c066ce1680666dde1cf301e2e65b5619f
+raw bytes sha256:       17366dda9a9f2993b2b8097c6930ca475051e80eff902e4a3f30af5abfda1b4f
   (what 'shasum -a 256 /tmp/rehearsal-out/genesis-template.json' gives you - fragile to formatting)
 
-canonical sha256:       d0e283f6595fb07cb6fd973f68762f78b783d2ad7a63e074782ea5ee96316d61
+canonical sha256:       401c760b2fcf385141b8e2a3753e9efec736c562893828ffca500c3f4d5a167c
   (jq -S -c . | sha256 - THIS is the value to publish and cross-check)

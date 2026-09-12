@@ -211,17 +211,26 @@ When a decision is made, update the Status column with ✅ Keep, ❌ Strip, or �
 
 ## EVM Precompile Decisions
 
-> To be filled in by Eng 1 after inspecting `app/app.go` for registered precompiles.
+**What `app/app.go` registers (the only set that *can* be active):** `precompiletypes.DefaultStaticPrecompiles(...)` — p256, bech32, staking, distribution, ICS20, bank, gov, slashing — plus Ark's custom `distrclaim`. The canonical list is `app.StaticPrecompileAddresses` (`app/precompiles.go`); `app/precompiles_test.go` fails if any genesis fixture in the repo activates a different set. Registration alone does nothing: a precompile is only callable if its address is also in `evm.params.active_static_precompiles`, and a call to a registered-but-inactive address *succeeds while doing nothing* (no error, real gas burned).
 
-| Precompile | Status | Decision | Notes |
-|------------|--------|----------|-------|
-| Staking precompile | ⏳ | — | Allows staking ops from Solidity |
-| Bank precompile | ⏳ | — | Allows token transfers from Solidity |
-| IBC precompile | ⏳ | — | Relevant — IBC is enabled at genesis |
-| Distribution precompile | ⏳ | — | Allows claiming staking rewards from Solidity |
-| Gov precompile | ⏳ | — | Allows governance votes from Solidity |
+**Current state:** every registered precompile is active. On `arkdevnet_9000-1` since governance proposal #8 (`networks/devnet/proposals/activate-static-precompiles.json`), and in every genesis source — devnet template, mainnet draft, rehearsal fixture — since PR #39. Before that the list was empty everywhere, not by decision but because `arkd init`'s raw default is empty and the genesis-merge-patch process never set it; the gap was found when IBC-via-EVM-wallet transfers silently produced no packets.
+
+| Precompile | Address | Status | Decision | Notes |
+|------------|---------|--------|----------|-------|
+| p256 | `0x…0100` | ✅ Active | Enable | Pure secp256r1 signature verification (EIP-7212); no chain-state access. Needed for passkey/WebAuthn-style wallets. |
+| bech32 | `0x…0400` | ✅ Active | Enable | Pure address-format conversion; no chain-state access. Prerequisite for any contract that takes a Cosmos address. |
+| Staking | `0x…0800` | ✅ Active | Enable | Delegate/undelegate/redelegate from Solidity — staking UX from EVM wallets. |
+| Distribution | `0x…0801` | ✅ Active | Enable | Withdraw staking rewards and set withdraw address from Solidity. |
+| ICS20 (IBC transfer) | `0x…0802` | ✅ Active | Enable | The concrete product use case that surfaced the gap: IBC transfers initiated from an EVM wallet. IBC is enabled at genesis (#5). |
+| Bank | `0x…0804` | ✅ Active | Enable | Native-denom balance queries and transfers from Solidity. |
+| Gov | `0x…0805` | ✅ Active | Enable | Governance votes from Solidity. |
+| Slashing | `0x…0806` | ✅ Active | Enable | Unjail from Solidity; signing-info queries. |
+| `distrclaim` (Ark custom) | `0x…0a01` | ✅ Active | Enable | Claim-and-convert rewards in one call. Ark-owned code (`app/precompiles/distrclaim`), not upstream. |
+| Vesting | `0x…0803` | ❌ Not registered | Cannot enable | Listed in upstream `evmtypes.AvailableStaticPrecompiles` but this cosmos/evm version ships no vesting precompile. Activating it would panic on first call (`precompiled contract not stored in memory`); `app.DefaultGenesis()` used to do exactly that until PR #39. |
 
 > **Rule:** Enable only precompiles with a concrete product use case. Each is a Solidity-callable entry point into chain state — additional attack surface.
+
+> **⏳ Still open for mainnet:** the per-precompile security review this rule implies has not been recorded. The set above is the upstream cosmos/evm default that every evmd-based chain ships, but there is no Ark-specific sign-off on the stateful ones (staking, distribution, ICS20, bank, gov, slashing, `distrclaim`). `scripts/chaos/reports/day1-static-analysis.md` §2 does **not** count: its address→module matrix is mislabelled throughout (e.g. `0x…0100` as Staking, `0x…0803` as IBC, `0x…0804` as Wasm, `0x…0a01` as Sanction) and audits a "10 enabled" set that includes the unregistered vesting slot, so whatever it scanned was not the precompiles actually wired into `app.go`. Owner: Eng 1. Until that is done, this section records *what is active and why*, not a completed review.
 
 ---
 

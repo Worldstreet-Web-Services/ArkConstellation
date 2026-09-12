@@ -18,6 +18,7 @@ already running.
 | File | Proposal | Status |
 |---|---|---|
 | `staking-unbonding-21d.json` | #3 | ✅ Passed 2026-09-04 — 180,000,000 KASH yes / 0 no. `unbonding_time` 300s → 1814400s |
+| `activate-static-precompiles.json` | #8 | ✅ Passed by 2026-09-10 — `evm.params.active_static_precompiles` `[]` → 9 addresses. Verified end-to-end: ICS20 precompile call produced a real `send_packet` on Ark and a matching receive on MANTRA |
 
 ## Submitting
 

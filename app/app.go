@@ -1299,11 +1299,7 @@ func (app *App) DefaultGenesis() map[string]json.RawMessage {
 
 	// Add EVM genesis configuration
 	evmGenState := evmtypes.DefaultGenesisState()
-	evmGenState.Params.ActiveStaticPrecompiles = append([]string{}, evmtypes.AvailableStaticPrecompiles...)
-	evmGenState.Params.ActiveStaticPrecompiles = append(
-		evmGenState.Params.ActiveStaticPrecompiles,
-		distrclaim.DistributionClaimPrecompileAddress,
-	)
+	evmGenState.Params.ActiveStaticPrecompiles = append([]string{}, StaticPrecompileAddresses...)
 	genesis[evmtypes.ModuleName] = app.appCodec.MustMarshalJSON(evmGenState)
 
 	// Add ERC20 genesis configuration
