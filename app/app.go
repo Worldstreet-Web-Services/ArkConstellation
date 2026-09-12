@@ -1458,18 +1458,25 @@ func (app *App) setupUpgradeStoreLoaders() {
 
 func (app *App) setupUpgradeHandlers() {
 	for _, upgrade := range Upgrades {
+		keepers := &upgrades.UpgradeKeepers{
+			StakingKeeper:         *app.StakingKeeper,
+			DistrKeeper:           app.DistrKeeper,
+			ProviderKeeper:        app.ProviderKeeper,
+			ConsensusParamsKeeper: app.ConsensusParamsKeeper,
+		}
+		// GovTimelockKeeper is only wired in for the upgrade that activates it;
+		// every other upgrade gets nil, so a handler's own nil check (see
+		// v8_5.CreateUpgradeHandler) is a real per-upgrade gate rather than
+		// something always satisfied regardless of which upgrade is running.
+		if upgrade.UpgradeName == v8_5.UpgradeName {
+			keepers.GovTimelockKeeper = &app.GovTimelockKeeper
+		}
 		app.UpgradeKeeper.SetUpgradeHandler(
 			upgrade.UpgradeName,
 			upgrade.CreateUpgradeHandler(
 				app.ModuleManager,
 				app.configurator,
-				&upgrades.UpgradeKeepers{
-					StakingKeeper:         *app.StakingKeeper,
-					DistrKeeper:           app.DistrKeeper,
-					ProviderKeeper:        app.ProviderKeeper,
-					ConsensusParamsKeeper: app.ConsensusParamsKeeper,
-					GovTimelockKeeper:     &app.GovTimelockKeeper,
-				},
+				keepers,
 				app.keys,
 			),
 		)

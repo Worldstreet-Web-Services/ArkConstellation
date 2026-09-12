@@ -239,6 +239,7 @@ func TestGovTimelockGenesisRejectsDanglingSchedule(t *testing.T) {
 
 	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
 	state, err := json.Marshal(govtimelocktypes.GenesisState{
+		ActivationHeight:   1,
 		ScheduledProposals: []govtimelocktypes.ScheduledProposal{{ProposalID: 92, ExecutionTime: start}},
 	})
 	require.NoError(t, err)
@@ -261,6 +262,7 @@ func TestGovTimelockGenesisAcceptsMatchedPair(t *testing.T) {
 
 	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
 	state, err := json.Marshal(govtimelocktypes.GenesisState{
+		ActivationHeight:   1,
 		ScheduledProposals: []govtimelocktypes.ScheduledProposal{{ProposalID: 93, ExecutionTime: start.Add(48 * time.Hour)}},
 	})
 	require.NoError(t, err)
@@ -289,6 +291,50 @@ func TestGovTimelockActiveOnFreshChain(t *testing.T) {
 	active, err := chain.GovTimelockKeeper.IsActive(ctx, 1)
 	require.NoError(t, err)
 	require.True(t, active, "a chain starting from genesis must have the timelock active")
+}
+
+// TestGovTimelockGenesisRejectsBelowMinimumDelay confirms InitGenesis itself
+// enforces the 48h minimum, not just the separate `genesis validate-genesis`
+// CLI command. A genesis produced by anything else (a script, a migration,
+// hand-edited state) must not be able to reach a running chain with a
+// shorter delay.
+func TestGovTimelockGenesisRejectsBelowMinimumDelay(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{})
+
+	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	state, err := json.Marshal(govtimelocktypes.GenesisState{
+		ActivationHeight: 1,
+		ExecutionDelay:   time.Second,
+	})
+	require.NoError(t, err)
+
+	require.PanicsWithError(t,
+		"execution delay must be at least 48h0m0s, got 1s",
+		func() { module.InitGenesis(ctx, chain.AppCodec(), state) },
+	)
+}
+
+// TestExportForZeroHeightResetsGovTimelockActivationHeight covers the fork
+// class: `--for-zero-height` resets staking/distribution/slashing state for a
+// fresh start, and must do the same for govtimelock's activation height.
+// Left as the source chain's (large) height, the forked chain — starting at
+// height 1 — would silently run with no timelock until it grinds up to that
+// height. Calls the unexported prepForZeroHeightGenesis directly (this test
+// file is in package app) rather than the full ExportAppStateAndValidators,
+// which needs a fully InitChain-ed app with EVM genesis coin info this
+// package's bare test helpers don't set up.
+func TestExportForZeroHeightResetsGovTimelockActivationHeight(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{})
+	require.NoError(t, chain.GovTimelockKeeper.SetActivationHeight(ctx, 4_000_000))
+
+	chain.prepForZeroHeightGenesis(ctx, nil)
+
+	height, err := chain.GovTimelockKeeper.GetActivationHeight(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), height,
+		"a zero-height export must not carry over a stale activation height from the source chain")
 }
 
 // TestV8_5UpgradeHandlerActivatesOnExistingChainWithPassedProposals covers the

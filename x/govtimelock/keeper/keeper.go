@@ -12,8 +12,11 @@ import (
 )
 
 type Keeper struct {
-	Schema             collections.Schema
-	ScheduledProposals collections.Map[collections.Pair[time.Time, uint64], uint64]
+	Schema collections.Schema
+	// ScheduledProposals is keyed by (executionTime, proposalID); the
+	// proposal ID lives entirely in the key, so this is a set rather than a
+	// map to a value that would just duplicate it.
+	ScheduledProposals collections.KeySet[collections.Pair[time.Time, uint64]]
 	// ActivationHeight records the block height at which the governance
 	// execution timelock became active. It is unset until the coordinated
 	// upgrade handler runs, and the EndBlocker keeps stock x/gov execution
@@ -26,12 +29,11 @@ type Keeper struct {
 func NewKeeper(storeService store.KVStoreService) Keeper {
 	sb := collections.NewSchemaBuilder(storeService)
 	k := Keeper{
-		ScheduledProposals: collections.NewMap(
+		ScheduledProposals: collections.NewKeySet(
 			sb,
 			types.ScheduledProposalPrefix,
 			"scheduled_governance_proposals",
 			collections.PairKeyCodec(sdk.TimeKey, collections.Uint64Key), //nolint:staticcheck // retain x/gov time encoding
-			collections.Uint64Value,
 		),
 		ActivationHeight: collections.NewItem(
 			sb,
@@ -56,7 +58,7 @@ func NewKeeper(storeService store.KVStoreService) Keeper {
 }
 
 func (k Keeper) Schedule(ctx context.Context, proposalID uint64, executionTime time.Time) error {
-	return k.ScheduledProposals.Set(ctx, collections.Join(executionTime, proposalID), proposalID)
+	return k.ScheduledProposals.Set(ctx, collections.Join(executionTime, proposalID))
 }
 
 func (k Keeper) Remove(ctx context.Context, executionTime time.Time, proposalID uint64) error {
@@ -133,16 +135,16 @@ func (k Keeper) collect(ctx context.Context, rng collections.Ranger[collections.
 		return nil, err
 	}
 
-	entries, err := iter.KeyValues()
+	keys, err := iter.Keys()
 	if err != nil {
 		return nil, err
 	}
 
-	scheduled := make([]types.ScheduledProposal, 0, len(entries))
-	for _, entry := range entries {
+	scheduled := make([]types.ScheduledProposal, 0, len(keys))
+	for _, key := range keys {
 		scheduled = append(scheduled, types.ScheduledProposal{
-			ProposalID:    entry.Value,
-			ExecutionTime: entry.Key.K1(),
+			ProposalID:    key.K2(),
+			ExecutionTime: key.K1(),
 		})
 	}
 	return scheduled, nil

@@ -77,6 +77,14 @@ func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, bz json.RawM
 	if err := json.Unmarshal(bz, &state); err != nil {
 		panic(err)
 	}
+	// AppModuleBasic.ValidateGenesis wires Validate into the separate,
+	// optional `genesis validate-genesis` CLI flow; it is not otherwise called
+	// on the path a node actually takes at startup. Call it here too so a
+	// self-contained invariant (e.g. the 48h minimum execution delay) can't
+	// reach a running chain just because it skipped that CLI step.
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
 	// GenesisState.Validate cannot see x/gov's state, so the cross-module
 	// invariants are checked here where both stores are available. Failing at
 	// InitGenesis is the right place for this: a mismatch that slipped through

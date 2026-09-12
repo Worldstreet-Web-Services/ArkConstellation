@@ -122,7 +122,14 @@ func processInactiveProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, logg
 				sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
 				sdk.NewAttribute(govtypes.AttributeKeyProposalResult, govtypes.AttributeValueProposalDropped),
 			))
-			logger.Info("proposal did not meet minimum deposit; deleted", "proposal", proposal.Id)
+			logger.Info(
+				"proposal did not meet minimum deposit; deleted",
+				"proposal", proposal.Id,
+				"expedited", proposal.Expedited,
+				"title", proposal.Title,
+				"min_deposit", sdk.NewCoins(proposal.GetMinDepositFromParams(params)...).String(),
+				"total_deposit", sdk.NewCoins(proposal.TotalDeposit...).String(),
+			)
 		}
 	}
 	return nil
@@ -238,7 +245,14 @@ func processEndedVotingPeriods(
 			runVotingPeriodEndedHook(ctx, govKeeper, proposal.Id)
 		}
 
-		logger.Info("proposal tallied", "proposal", proposal.Id, "results", logMsg)
+		logger.Info(
+			"proposal tallied",
+			"proposal", proposal.Id,
+			"status", proposal.Status.String(),
+			"expedited", proposal.Expedited,
+			"title", proposal.Title,
+			"results", logMsg,
+		)
 		ctx.EventManager().EmitEvent(sdk.NewEvent(
 			govtypes.EventTypeActiveProposal,
 			sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
@@ -405,7 +419,13 @@ func failUnsupportedProposal(
 	if active {
 		eventType = govtypes.EventTypeActiveProposal
 	}
-	logger.Info("proposal failed to decode; deleted", "proposal", proposal.Id, "results", reason)
+	logger.Info(
+		"proposal failed to decode; deleted",
+		"proposal", proposal.Id,
+		"expedited", proposal.Expedited,
+		"title", proposal.Title,
+		"results", reason,
+	)
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		eventType,
 		sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
