@@ -1069,6 +1069,11 @@
       },
       "constitution": ""
     },
+    "govtimelock": {
+      "scheduled_proposals": [],
+      "activation_height": 1,
+      "execution_delay": 0
+    },
     "ibc": {
       "client_genesis": {
         "clients": [],

@@ -237,4 +237,27 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	); err != nil {
 		log.Fatal(err)
 	}
+
+	/* Handle governance timelock state. */
+
+	// The exported ActivationHeight is only meaningful on the chain it was
+	// recorded on; left as-is it would carry over as a (likely large) height
+	// the forked chain, starting fresh at height 1, may never reach — silently
+	// disabling the timelock on the new chain. Reset it to 1 so the fork starts
+	// with the timelock active from its first block, matching a brand-new
+	// chain's default.
+	if err := app.GovTimelockKeeper.SetActivationHeight(ctx, 1); err != nil {
+		panic(err)
+	}
+
+	// A scheduled entry's ExecutionTime is an absolute wall-clock time from
+	// the source chain; on a fork it may already be in the past (or close to
+	// it), which would let Keeper.Due match it immediately and execute a
+	// proposal's messages in the new chain's very first block — skipping the
+	// 48h cooldown in exactly the disaster-recovery scenario the module
+	// exists to protect. Drop any in-flight schedule instead of trying to
+	// re-adjust it to a new reference time.
+	if err := app.GovTimelockKeeper.ClearSchedule(ctx); err != nil {
+		panic(err)
+	}
 }

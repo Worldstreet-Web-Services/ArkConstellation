@@ -54,10 +54,14 @@ import (
 	queries "github.com/MANTRA-Chain/mantrachain/v8/app/queries"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_4"
+	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_5"
 	"github.com/MANTRA-Chain/mantrachain/v8/client/docs"
 	denommetadatakeeper "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/keeper"
 	denommetadatamodule "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/module"
 	denommetadatatypes "github.com/MANTRA-Chain/mantrachain/v8/x/denommetadata/types"
+	govtimelock "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
+	govtimelockkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
+	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 	sanctionkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/sanction/keeper"
 	sanction "github.com/MANTRA-Chain/mantrachain/v8/x/sanction/module"
 	sanctiontypes "github.com/MANTRA-Chain/mantrachain/v8/x/sanction/types"
@@ -236,7 +240,7 @@ var maccPerms = map[string][]string{
 	erc20types.ModuleName:     {authtypes.Minter, authtypes.Burner},
 }
 
-var Upgrades = []upgrades.Upgrade{v8_4.Upgrade}
+var Upgrades = []upgrades.Upgrade{v8_4.Upgrade, v8_5.Upgrade}
 
 var (
 	_ runtime.AppI            = (*App)(nil)
@@ -278,6 +282,7 @@ type App struct {
 	CircuitKeeper         circuitkeeper.Keeper // emergency pause: cosmossdk.io/x/circuit, wired via SetCircuitBreaker below
 	SanctionKeeper        sanctionkeeper.Keeper
 	DenomMetadataKeeper   denommetadatakeeper.Keeper
+	GovTimelockKeeper     govtimelockkeeper.Keeper
 
 	// IBC
 	IBCKeeper           *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
@@ -558,6 +563,9 @@ func New(
 		app.MsgServiceRouter(),
 		govConfig,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+	app.GovTimelockKeeper = govtimelockkeeper.NewKeeper(
+		runtime.NewKVStoreService(keys[govtypes.StoreKey]),
 	)
 
 	app.ProviderKeeper.SetGovKeeper(app.GovKeeper)
@@ -861,7 +869,12 @@ func New(
 		vesting.NewAppModule(app.AccountKeeper, app.BankKeeper),
 		bank.NewAppModule(appCodec, *app.BankKeeper, app.AccountKeeper, nil),
 		feegrantmodule.NewAppModule(appCodec, app.AccountKeeper, app.BankKeeper, app.FeeGrantKeeper, app.interfaceRegistry),
-		gov.NewAppModule(appCodec, &app.GovKeeper, app.AccountKeeper, app.BankKeeper, nil),
+		govtimelock.NewGovAppModule(
+			gov.NewAppModule(appCodec, &app.GovKeeper, app.AccountKeeper, app.BankKeeper, nil),
+			&app.GovKeeper,
+			app.GovTimelockKeeper,
+		),
+		govtimelock.NewAppModule(app.GovTimelockKeeper, &app.GovKeeper),
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, nil),
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, nil, app.interfaceRegistry),
 		distr.NewAppModule(appCodec, app.DistrKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, nil),
@@ -988,6 +1001,7 @@ func New(
 		stakingtypes.ModuleName,
 		slashingtypes.ModuleName,
 		govtypes.ModuleName,
+		govtimelocktypes.ModuleName,
 		minttypes.ModuleName,
 		evidencetypes.ModuleName,
 		authz.ModuleName,
@@ -1440,17 +1454,25 @@ func (app *App) setupUpgradeStoreLoaders() {
 
 func (app *App) setupUpgradeHandlers() {
 	for _, upgrade := range Upgrades {
+		keepers := &upgrades.UpgradeKeepers{
+			StakingKeeper:         *app.StakingKeeper,
+			DistrKeeper:           app.DistrKeeper,
+			ProviderKeeper:        app.ProviderKeeper,
+			ConsensusParamsKeeper: app.ConsensusParamsKeeper,
+		}
+		// GovTimelockKeeper is only wired in for the upgrade that activates it;
+		// every other upgrade gets nil, so a handler's own nil check (see
+		// v8_5.CreateUpgradeHandler) is a real per-upgrade gate rather than
+		// something always satisfied regardless of which upgrade is running.
+		if upgrade.UpgradeName == v8_5.UpgradeName {
+			keepers.GovTimelockKeeper = &app.GovTimelockKeeper
+		}
 		app.UpgradeKeeper.SetUpgradeHandler(
 			upgrade.UpgradeName,
 			upgrade.CreateUpgradeHandler(
 				app.ModuleManager,
 				app.configurator,
-				&upgrades.UpgradeKeepers{
-					StakingKeeper:         *app.StakingKeeper,
-					DistrKeeper:           app.DistrKeeper,
-					ProviderKeeper:        app.ProviderKeeper,
-					ConsensusParamsKeeper: app.ConsensusParamsKeeper,
-				},
+				keepers,
 				app.keys,
 			),
 		)
