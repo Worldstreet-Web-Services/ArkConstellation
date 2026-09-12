@@ -28,6 +28,13 @@ arkd tx gov submit-proposal networks/devnet/proposals/<file>.json \
   --gas auto --gas-adjustment 1.5 --gas-prices 1000000000esp --yes
 ```
 
+For a `MsgUpdateParams`-style proposal that replaces a whole params struct
+(rather than a single field), run `verify-live-params.sh` immediately before
+submitting. It diffs the proposal's non-target fields against what's live on
+chain and refuses to pass if anything drifted since the proposal's snapshot
+was taken — otherwise the wholesale replace silently reverts that drift with
+no error from anything.
+
 Two things that are easy to get wrong, both of which cost a failed transaction:
 
 - **`--gas-prices 1000000000esp` is required**, and it is *not* what the node

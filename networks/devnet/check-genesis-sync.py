@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fail loudly if genesis-template.json and pystarport.json's embedded
-"genesis" merge-patch drift apart.
+"genesis" merge-patch drift apart, or if active_static_precompiles drifts
+apart across every other file that hardcodes a copy of that same list.
 
 genesis-template.json is the reviewable, standalone copy of the genesis
 override patch (see its _comment field for why it can't just be the literal
@@ -10,14 +11,24 @@ for plain JSON configs. Nothing enforces these two stay identical except
 this check - run it before every devnet-init so a hand-edit to one file
 can never silently apply different genesis parameters than the ones a
 human reviewed in the other.
+
+Separately, active_static_precompiles (the list that was empty since
+genesis - see proposals/activate-static-precompiles.json for the incident)
+is hardcoded verbatim in three more files with no shared source: the devnet
+proposal, the mainnet genesis draft, and the rehearsal fixture. Nothing but
+this check stops one of them drifting from the others.
 """
 import json
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
+REPO_ROOT = HERE.parent.parent
 TEMPLATE_PATH = HERE / "genesis-template.json"
 PYSTARPORT_PATH = HERE / "pystarport.json"
+PROPOSAL_PATH = HERE / "proposals" / "activate-static-precompiles.json"
+MAINNET_DRAFT_PATH = REPO_ROOT / "networks" / "mainnet" / "genesis-DRAFT.json"
+REHEARSAL_PATH = REPO_ROOT / "scripts" / "genesis" / "rehearsal" / "base-genesis.json"
 CHAIN_ID = "arkdevnet_9000-1"
 
 
@@ -30,6 +41,59 @@ def load_json(path):
         return json.loads(text)
     except json.JSONDecodeError as e:
         sys.exit(f"error: {path} is not valid JSON: {e}")
+
+
+def get_precompiles(doc, source):
+    try:
+        return doc["app_state"]["evm"]["params"]["active_static_precompiles"]
+    except (KeyError, TypeError) as e:
+        sys.exit(f"error: {source} missing app_state.evm.params.active_static_precompiles: {e}")
+
+
+def check_precompile_list_sync(template):
+    source_list = get_precompiles(template, TEMPLATE_PATH)
+    if not source_list:
+        sys.exit(
+            f"error: {TEMPLATE_PATH}'s active_static_precompiles is empty - "
+            "nothing to sync the other copies against."
+        )
+
+    mainnet_draft = load_json(MAINNET_DRAFT_PATH)
+    rehearsal = load_json(REHEARSAL_PATH)
+    proposal = load_json(PROPOSAL_PATH)
+
+    try:
+        proposal_list = proposal["messages"][0]["params"]["active_static_precompiles"]
+    except (KeyError, IndexError, TypeError) as e:
+        sys.exit(
+            f"error: {PROPOSAL_PATH} missing "
+            f"messages[0].params.active_static_precompiles: {e}"
+        )
+
+    candidates = [
+        (MAINNET_DRAFT_PATH, get_precompiles(mainnet_draft, MAINNET_DRAFT_PATH)),
+        (REHEARSAL_PATH, get_precompiles(rehearsal, REHEARSAL_PATH)),
+        (PROPOSAL_PATH, proposal_list),
+    ]
+    mismatches = [(path, lst) for path, lst in candidates if lst != source_list]
+    if mismatches:
+        details = "\n\n".join(
+            f"{path}:\n{json.dumps(lst, indent=2)}" for path, lst in mismatches
+        )
+        sys.exit(
+            "error: active_static_precompiles has drifted apart across files "
+            "that must all carry the identical list - this is the exact class "
+            "of bug that left it empty on devnet in the first place (see "
+            f"{PROPOSAL_PATH}).\n\n"
+            f"{TEMPLATE_PATH} (source of truth):\n"
+            f"{json.dumps(source_list, indent=2)}\n\n"
+            f"{details}"
+        )
+
+    print(
+        "OK: active_static_precompiles is identical across genesis-template.json, "
+        "the devnet proposal, the mainnet draft, and the rehearsal fixture."
+    )
 
 
 def main():
@@ -62,6 +126,8 @@ def main():
         )
 
     print("OK: genesis-template.json and pystarport.json genesis patch are in sync.")
+
+    check_precompile_list_sync(template)
 
 
 if __name__ == "__main__":
