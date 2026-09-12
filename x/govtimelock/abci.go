@@ -294,6 +294,24 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 				"proposal", scheduled.ProposalID,
 				"error", err,
 			)
+			if errors.Is(err, collections.ErrEncoding) {
+				// The record exists but is corrupt, unlike a plain not-found:
+				// leaving it as-is would keep tripping this same decode error on
+				// every future load of it (including validateAgainstGov's Walk
+				// over x/gov's proposals at the next genesis export/import).
+				// Deposits were already settled when this was first scheduled
+				// (processEndedVotingPeriods), so — unlike failUnsupportedProposal,
+				// which runs before that — this only overwrites the record itself.
+				failed := govv1.Proposal{
+					Id:           scheduled.ProposalID,
+					Status:       govv1.StatusFailed,
+					FailedReason: fmt.Sprintf("scheduled proposal could not be loaded: %s", err),
+				}
+				if err := govKeeper.SetProposal(ctx, failed); err != nil {
+					return err
+				}
+			}
+			runVotingPeriodEndedHook(ctx, govKeeper, scheduled.ProposalID)
 			if err := dropScheduledEntry(ctx, timelockKeeper, scheduled, "scheduled proposal could not be loaded"); err != nil {
 				return err
 			}
@@ -309,13 +327,14 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 				"status", proposal.Status.String(),
 			)
 			reason := fmt.Sprintf("unexpected status %s at execution time", proposal.Status.String())
+			runVotingPeriodEndedHook(ctx, govKeeper, proposal.Id)
 			if err := dropScheduledEntry(ctx, timelockKeeper, scheduled, reason); err != nil {
 				return err
 			}
 			continue
 		}
 
-		proposal, result, _ := executeProposal(ctx, govKeeper, proposal, logger)
+		proposal, result, logMsg := executeProposal(ctx, govKeeper, proposal, logger)
 
 		if err := govKeeper.SetProposal(ctx, proposal); err != nil {
 			return err
@@ -330,6 +349,7 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 			eventTypeProposalExecuted,
 			sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
 			sdk.NewAttribute(govtypes.AttributeKeyProposalResult, result),
+			sdk.NewAttribute(govtypes.AttributeKeyProposalLog, logMsg),
 		))
 	}
 	return nil

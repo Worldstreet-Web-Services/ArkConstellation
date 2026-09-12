@@ -116,16 +116,25 @@ func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, bz json.RawM
 	}
 }
 
-// validateAgainstGov enforces the two cross-module invariants that
-// types.GenesisState.Validate structurally cannot: every scheduled entry must
-// name a proposal that exists in x/gov and is StatusPassed, and every passed
-// proposal in x/gov must have a corresponding scheduled entry (otherwise its
-// messages would never execute).
+// validateAgainstGov enforces the one cross-module invariant that
+// types.GenesisState.Validate structurally cannot see: every scheduled entry
+// must name a proposal that exists in x/gov and is StatusPassed.
+//
+// It deliberately does NOT check the reverse — that every StatusPassed
+// proposal in x/gov has a scheduled entry. That would sound like a reasonable
+// invariant ("otherwise its messages would never execute"), but it isn't one:
+// executeProposal (abci.go) sets a proposal back to StatusPassed on successful
+// execution, matching stock x/gov's own "passed and executed" semantics, and
+// the schedule entry is removed immediately after. So a StatusPassed proposal
+// with no schedule entry isn't a stranded proposal — it's the normal, expected
+// state of every proposal that has ever successfully executed, whether before
+// this module ever activated (stock semantics) or after (timelocked
+// semantics, schedule already consumed). Checking the reverse direction would
+// panic InitGenesis on re-importing the exported genesis of any chain that
+// has ever executed a single governance proposal — the ordinary case of a
+// coordinated chain halt-and-restart from an `arkd export`, not a rare one.
 func (am AppModule) validateAgainstGov(ctx sdk.Context, state types.GenesisState) error {
-	scheduledIDs := make(map[uint64]struct{}, len(state.ScheduledProposals))
 	for _, scheduled := range state.ScheduledProposals {
-		scheduledIDs[scheduled.ProposalID] = struct{}{}
-
 		proposal, err := am.govKeeper.Proposals.Get(ctx, scheduled.ProposalID)
 		if err != nil {
 			return fmt.Errorf(
@@ -139,22 +148,6 @@ func (am AppModule) validateAgainstGov(ctx sdk.Context, state types.GenesisState
 				types.ModuleName, scheduled.ProposalID, proposal.Status.String(), govv1.StatusPassed.String(),
 			)
 		}
-	}
-
-	err := am.govKeeper.Proposals.Walk(ctx, nil, func(id uint64, proposal govv1.Proposal) (bool, error) {
-		if proposal.Status != govv1.StatusPassed {
-			return false, nil
-		}
-		if _, ok := scheduledIDs[id]; !ok {
-			return true, fmt.Errorf(
-				"x/gov proposal %d is %s but has no %s schedule; its messages would never execute",
-				id, proposal.Status.String(), types.ModuleName,
-			)
-		}
-		return false, nil
-	})
-	if err != nil {
-		return err
 	}
 	return nil
 }

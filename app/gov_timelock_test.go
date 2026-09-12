@@ -203,11 +203,18 @@ func TestGovernanceTimelockActivatesAtHeight(t *testing.T) {
 	require.True(t, active)
 }
 
-// TestGovTimelockGenesisRejectsUnscheduledPassedProposal covers the genesis
-// cross-module invariant that types.GenesisState.Validate structurally cannot
-// see: a PROPOSAL_STATUS_PASSED proposal in x/gov with no matching schedule
-// would otherwise be stranded forever, its messages never executing.
-func TestGovTimelockGenesisRejectsUnscheduledPassedProposal(t *testing.T) {
+// TestGovTimelockGenesisAcceptsExecutedPassedProposalWithNoSchedule covers
+// the ordinary genesis re-import case: a coordinated chain halt-and-restart
+// from `arkd export` (or any re-run of InitGenesis against an existing
+// chain's exported state). executeProposal (abci.go) sets a proposal back to
+// StatusPassed on successful execution — matching stock x/gov's own "passed
+// and executed" semantics — and removes its schedule entry immediately after.
+// So a StatusPassed proposal with no schedule entry is the normal, expected
+// state of every proposal that has ever successfully executed, not a
+// stranded one; InitGenesis must not panic on it. (An earlier version of this
+// invariant did panic here, which would have made re-importing the exported
+// genesis of any chain with governance history impossible.)
+func TestGovTimelockGenesisAcceptsExecutedPassedProposalWithNoSchedule(t *testing.T) {
 	chain := SetupWithEmptyStore(t)
 	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
 	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start})
@@ -222,10 +229,7 @@ func TestGovTimelockGenesisRejectsUnscheduledPassedProposal(t *testing.T) {
 	empty, err := json.Marshal(govtimelocktypes.DefaultGenesis())
 	require.NoError(t, err)
 
-	require.PanicsWithError(t,
-		"x/gov proposal 91 is PROPOSAL_STATUS_PASSED but has no govtimelock schedule; its messages would never execute",
-		func() { module.InitGenesis(ctx, chain.AppCodec(), empty) },
-	)
+	require.NotPanics(t, func() { module.InitGenesis(ctx, chain.AppCodec(), empty) })
 }
 
 // TestGovTimelockGenesisRejectsDanglingSchedule covers the inverse mismatch: a
