@@ -11,10 +11,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// DelayForLogging mirrors the module's configured delay for log/telemetry use
-// by callers that cannot import the parent package without a cycle.
-const DelayForLogging = 48 * time.Hour
-
 type Keeper struct {
 	Schema             collections.Schema
 	ScheduledProposals collections.Map[collections.Pair[time.Time, uint64], uint64]

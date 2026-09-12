@@ -1,9 +1,17 @@
 package types
 
-import "cosmossdk.io/collections"
+import (
+	"time"
+
+	"cosmossdk.io/collections"
+)
 
 const (
 	ModuleName = "govtimelock"
+
+	// MinimumDelay is the shortest execution delay a production chain may
+	// configure; GenesisState.Validate enforces it.
+	MinimumDelay = 48 * time.Hour
 )
 
 // Prefixes 64-66 are reserved by Ark inside the existing x/gov store.

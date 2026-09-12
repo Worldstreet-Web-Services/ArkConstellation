@@ -8,6 +8,7 @@ import (
 	"cosmossdk.io/collections"
 	"cosmossdk.io/log"
 	"github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
+	"github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -38,7 +39,7 @@ const (
 // events separate "scheduled" from "executed". Introducing a new status value
 // would be the cleaner fix but is a v1 wire-format break, so it is deliberately
 // not done here — see docs/proof/gov-timelock.md.
-func EndBlocker(ctx sdk.Context, govKeeper *govkeeper.Keeper, timelockKeeper keeper.Keeper, delay time.Duration) error {
+func EndBlocker(ctx sdk.Context, govKeeper *govkeeper.Keeper, timelockKeeper keeper.Keeper, fallbackDelay time.Duration) error {
 	defer telemetry.ModuleMeasureSince(govtypes.ModuleName, telemetry.Now(), telemetry.MetricKeyEndBlocker)
 
 	logger := ctx.Logger().With("module", "x/"+govtypes.ModuleName)
@@ -55,7 +56,7 @@ func EndBlocker(ctx sdk.Context, govKeeper *govkeeper.Keeper, timelockKeeper kee
 	if err := processInactiveProposals(ctx, govKeeper, logger); err != nil {
 		return err
 	}
-	if err := processEndedVotingPeriods(ctx, govKeeper, timelockKeeper, delay, logger, active); err != nil {
+	if err := processEndedVotingPeriods(ctx, govKeeper, timelockKeeper, fallbackDelay, logger, active); err != nil {
 		return err
 	}
 	if !active {
@@ -131,7 +132,7 @@ func processEndedVotingPeriods(
 	ctx sdk.Context,
 	govKeeper *govkeeper.Keeper,
 	timelockKeeper keeper.Keeper,
-	delay time.Duration,
+	fallbackDelay time.Duration,
 	logger log.Logger,
 	active bool,
 ) error {
@@ -186,6 +187,10 @@ func processEndedVotingPeriods(
 			// Pre-activation: stock x/gov semantics — execute in this block.
 			proposal, tagValue, logMsg = executeProposal(ctx, govKeeper, proposal, logger)
 		case passes:
+			delay, err := timelockKeeper.GetExecutionDelay(ctx, fallbackDelay)
+			if err != nil {
+				return err
+			}
 			executionTime := ctx.BlockTime().Add(delay)
 			if err := timelockKeeper.Schedule(ctx, proposal.Id, executionTime); err != nil {
 				return err
@@ -263,15 +268,9 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 				"proposal", scheduled.ProposalID,
 				"error", err,
 			)
-			if err := timelockKeeper.Remove(ctx, scheduled.ExecutionTime, scheduled.ProposalID); err != nil {
+			if err := dropScheduledEntry(ctx, timelockKeeper, scheduled, "scheduled proposal could not be loaded"); err != nil {
 				return err
 			}
-			ctx.EventManager().EmitEvent(sdk.NewEvent(
-				eventTypeProposalExecuted,
-				sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", scheduled.ProposalID)),
-				sdk.NewAttribute(govtypes.AttributeKeyProposalResult, govtypes.AttributeValueProposalFailed),
-				sdk.NewAttribute(govtypes.AttributeKeyProposalLog, "scheduled proposal could not be loaded"),
-			))
 			continue
 		}
 		if proposal.Status != govv1.StatusPassed {
@@ -283,15 +282,10 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 				"proposal", proposal.Id,
 				"status", proposal.Status.String(),
 			)
-			if err := timelockKeeper.Remove(ctx, scheduled.ExecutionTime, scheduled.ProposalID); err != nil {
+			reason := fmt.Sprintf("unexpected status %s at execution time", proposal.Status.String())
+			if err := dropScheduledEntry(ctx, timelockKeeper, scheduled, reason); err != nil {
 				return err
 			}
-			ctx.EventManager().EmitEvent(sdk.NewEvent(
-				eventTypeProposalExecuted,
-				sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", proposal.Id)),
-				sdk.NewAttribute(govtypes.AttributeKeyProposalResult, govtypes.AttributeValueProposalFailed),
-				sdk.NewAttribute(govtypes.AttributeKeyProposalLog, fmt.Sprintf("unexpected status %s at execution time", proposal.Status.String())),
-			))
 			continue
 		}
 
@@ -312,6 +306,22 @@ func executeMaturedProposals(ctx sdk.Context, govKeeper *govkeeper.Keeper, timel
 			sdk.NewAttribute(govtypes.AttributeKeyProposalResult, result),
 		))
 	}
+	return nil
+}
+
+// dropScheduledEntry removes a matured schedule entry that cannot be executed
+// and emits the corresponding failed proposal_executed event, so the two
+// recovery branches in executeMaturedProposals can't drift apart.
+func dropScheduledEntry(ctx sdk.Context, timelockKeeper keeper.Keeper, scheduled types.ScheduledProposal, reason string) error {
+	if err := timelockKeeper.Remove(ctx, scheduled.ExecutionTime, scheduled.ProposalID); err != nil {
+		return err
+	}
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		eventTypeProposalExecuted,
+		sdk.NewAttribute(govtypes.AttributeKeyProposalID, fmt.Sprintf("%d", scheduled.ProposalID)),
+		sdk.NewAttribute(govtypes.AttributeKeyProposalResult, govtypes.AttributeValueProposalFailed),
+		sdk.NewAttribute(govtypes.AttributeKeyProposalLog, reason),
+	))
 	return nil
 }
 

@@ -5,10 +5,14 @@ import (
 	"testing"
 	"time"
 
+	upgradetypes "cosmossdk.io/x/upgrade/types"
+	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades"
+	v8_5 "github.com/MANTRA-Chain/mantrachain/v8/app/upgrades/v8_5"
 	govtimelock "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
 	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
@@ -285,6 +289,56 @@ func TestGovTimelockActiveOnFreshChain(t *testing.T) {
 	active, err := chain.GovTimelockKeeper.IsActive(ctx, 1)
 	require.NoError(t, err)
 	require.True(t, active, "a chain starting from genesis must have the timelock active")
+}
+
+// TestV8_5UpgradeHandlerActivatesOnExistingChainWithPassedProposals covers the
+// upgrade-handler halt class: govtimelock is a brand-new module, so
+// module.Manager.RunMigrations would otherwise call its InitGenesis with an
+// empty DefaultGenesis(), and InitGenesis's cross-validation against x/gov
+// panics on any proposal that has ever passed. Any real chain has such
+// proposals, so the upgrade handler must activate the timelock without
+// routing through InitGenesis at all.
+func TestV8_5UpgradeHandlerActivatesOnExistingChainWithPassedProposals(t *testing.T) {
+	chain := SetupWithEmptyStore(t)
+	start := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	ctx := chain.NewUncachedContext(false, tmproto.Header{Time: start, Height: 100})
+
+	proposal := makePassedProposal(t, &banktypes.MsgUpdateParams{
+		Authority: authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		Params:    banktypes.DefaultParams(),
+	}, 94, start)
+	require.NoError(t, chain.GovKeeper.SetProposal(ctx, proposal))
+
+	// Simulate the real upgrade: govtimelock has never run migrations before,
+	// so it is absent from the stored version map.
+	fromVM := chain.ModuleManager.GetVersionMap()
+	delete(fromVM, govtimelocktypes.ModuleName)
+
+	handler := v8_5.CreateUpgradeHandler(
+		chain.ModuleManager,
+		chain.Configurator(),
+		&upgrades.UpgradeKeepers{GovTimelockKeeper: &chain.GovTimelockKeeper},
+		nil,
+	)
+
+	var toVM module.VersionMap
+	require.NotPanics(t, func() {
+		var err error
+		toVM, err = handler(ctx, upgradetypes.Plan{}, fromVM)
+		require.NoError(t, err)
+	})
+	require.Equal(t, uint64(govtimelock.ConsensusVersion), toVM[govtimelocktypes.ModuleName])
+
+	active, err := chain.GovTimelockKeeper.IsActive(ctx, ctx.BlockHeight())
+	require.NoError(t, err)
+	require.True(t, active, "upgrade handler must activate the timelock at the upgrade height")
+
+	// The pre-existing passed proposal must not have been scheduled by a stray
+	// InitGenesis call — it predates the timelock and already executed under
+	// stock semantics.
+	due, err := chain.GovTimelockKeeper.Due(ctx, ctx.BlockTime().Add(365*24*time.Hour))
+	require.NoError(t, err)
+	require.Empty(t, due)
 }
 
 // TestGovTimelockGenesisRoundTrip ensures the activation height survives an

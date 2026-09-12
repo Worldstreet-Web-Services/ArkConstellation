@@ -22,7 +22,9 @@ import (
 
 const (
 	ConsensusVersion = 1
-	MinimumDelay     = 48 * time.Hour
+	// MinimumDelay re-exports types.MinimumDelay for callers that already
+	// import this package.
+	MinimumDelay = types.MinimumDelay
 )
 
 var (
@@ -191,9 +193,5 @@ func NewGovAppModule(base gov.AppModule, govKeeper *govkeeper.Keeper, timelockKe
 
 func (am GovAppModule) EndBlock(ctx context.Context) error {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	delay, err := am.timelockKeeper.GetExecutionDelay(sdkCtx, am.delay)
-	if err != nil {
-		return err
-	}
-	return EndBlocker(sdkCtx, am.govKeeper, am.timelockKeeper, delay)
+	return EndBlocker(sdkCtx, am.govKeeper, am.timelockKeeper, am.delay)
 }

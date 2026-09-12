@@ -6,7 +6,8 @@ import (
 	storetypes "cosmossdk.io/store/types"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/MANTRA-Chain/mantrachain/v8/app/upgrades"
-	govtimelockkeeper "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/keeper"
+	"github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock"
+	govtimelocktypes "github.com/MANTRA-Chain/mantrachain/v8/x/govtimelock/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 )
@@ -32,6 +33,17 @@ func CreateUpgradeHandler(
 		ctx := sdk.UnwrapSDKContext(c)
 		ctx.Logger().Info("Starting v8.5.0 upgrade...")
 
+		// govtimelock is a brand-new module, so RunMigrations would otherwise call
+		// its InitGenesis with an empty DefaultGenesis(): that cross-validates
+		// against x/gov and panics on any proposal that has ever passed on this
+		// chain. Activation for existing chains happens explicitly below via
+		// SetActivationHeight instead, so pre-seed the version map to make
+		// RunMigrations treat govtimelock as already initialized and skip its
+		// InitGenesis entirely.
+		if keepers.GovTimelockKeeper != nil {
+			vm[govtimelocktypes.ModuleName] = govtimelock.ConsensusVersion
+		}
+
 		ctx.Logger().Info("Running module migrations...")
 		vm, err := mm.RunMigrations(ctx, configurator, vm)
 		if err != nil {
@@ -46,7 +58,7 @@ func CreateUpgradeHandler(
 			ctx.Logger().Info(
 				"governance execution timelock activated",
 				"height", height,
-				"delay", govtimelockkeeper.DelayForLogging,
+				"delay", govtimelocktypes.MinimumDelay,
 			)
 		}
 

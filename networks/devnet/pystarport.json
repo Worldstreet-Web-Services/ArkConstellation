@@ -139,7 +139,9 @@
           }
         },
         "govtimelock": {
-          "scheduled_proposals": []
+          "scheduled_proposals": [],
+          "activation_height": 1,
+          "execution_delay": 0
         },
         "crisis": {
           "constant_fee": { "denom": "esp", "amount": "8000000000000000" }

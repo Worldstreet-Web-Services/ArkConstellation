@@ -19,10 +19,8 @@ type GenesisState struct {
 	// agree on behavior until the upgrade height.
 	ActivationHeight int64 `json:"activation_height"`
 	// ExecutionDelay is how long a passed proposal waits before its messages
-	// run. Zero means the module default (MinimumDelay, 48h). It is genesis
-	// state rather than a compile-time constant so test networks can use a
-	// short delay; production genesis must leave it unset or set it to at least
-	// MinimumDelay, which Validate enforces.
+	// run. Zero means the module default (MinimumDelay, 48h). Validate
+	// enforces that a nonzero value is at least MinimumDelay.
 	ExecutionDelay time.Duration `json:"execution_delay"`
 }
 
@@ -36,6 +34,9 @@ func DefaultGenesis() GenesisState {
 func (gs GenesisState) Validate() error {
 	if gs.ExecutionDelay < 0 {
 		return fmt.Errorf("execution delay must not be negative, got %s", gs.ExecutionDelay)
+	}
+	if gs.ExecutionDelay != 0 && gs.ExecutionDelay < MinimumDelay {
+		return fmt.Errorf("execution delay must be at least %s, got %s", MinimumDelay, gs.ExecutionDelay)
 	}
 	if gs.ActivationHeight < 0 {
 		return fmt.Errorf("activation height must not be negative, got %d", gs.ActivationHeight)

@@ -24,6 +24,11 @@ func TestGenesisValidation(t *testing.T) {
 		{name: "negative activation height", state: types.GenesisState{ActivationHeight: -1}, wantErr: "must not be negative"},
 		{name: "inactive with schedules", state: types.GenesisState{ActivationHeight: 0, ScheduledProposals: []types.ScheduledProposal{{ProposalID: 1, ExecutionTime: now}}}, wantErr: "timelock is inactive"},
 		{name: "inactive and empty is valid for an upgrading chain", state: types.GenesisState{ActivationHeight: 0}},
+		{name: "negative execution delay", state: types.GenesisState{ExecutionDelay: -1}, wantErr: "must not be negative"},
+		{name: "zero execution delay uses module default", state: types.GenesisState{ExecutionDelay: 0}},
+		{name: "execution delay below minimum", state: types.GenesisState{ExecutionDelay: types.MinimumDelay - time.Nanosecond}, wantErr: "must be at least"},
+		{name: "execution delay at minimum", state: types.GenesisState{ExecutionDelay: types.MinimumDelay}},
+		{name: "execution delay above minimum", state: types.GenesisState{ExecutionDelay: types.MinimumDelay + time.Hour}},
 	}
 
 	for _, tc := range tests {
