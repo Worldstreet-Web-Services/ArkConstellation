@@ -76,8 +76,10 @@ TMKMS logged `verification failed: ... validator peer ID mismatch!` with a
 *different* unexpected ID on every retry.
 
 Traced to CometBFT's own source, not a config mistake on this end:
-`privval/utils.go:42` (this repo currently vendors CometBFT
-`v0.38.23-0.20260422215035-4928b26fd5ba` — find the exact path with
+`privval/utils.go:42` (originally observed against the pseudo-version
+`v0.38.23-0.20260422215035-4928b26fd5ba`; this repo now vendors the
+released tag `v0.38.23`, a strict fast-forward from that pseudo-version
+that does not touch this file — find the exact path with
 `go list -m github.com/cometbft/cometbft` and look under
 `$(go env GOMODCACHE)`):
 

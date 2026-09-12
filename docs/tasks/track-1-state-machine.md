@@ -16,7 +16,7 @@ Deliver a minimal, compiling, and secure blockchain binary stripped of all non-e
 
 ### Upstream Diffing
 
-- [ ] Diff `MANTRA-Chain/cosmos-sdk` (`v0.53.6-v8-mantra-1`) against upstream `cosmos-sdk v0.53.x`
+- [x] Diff `MANTRA-Chain/cosmos-sdk` (now pinned at `v0.53.8-v8-mantra-1`) against upstream `cosmos-sdk v0.53.x` — done for both the `v0.53.6` baseline and the current `v0.53.8` pin; results in `docs/proof/fork-audit-cosmos-sdk.md`
   ```bash
   # Add upstream cosmos-sdk as a reference remote
   git remote add cosmos-sdk-upstream https://github.com/cosmos/cosmos-sdk.git
