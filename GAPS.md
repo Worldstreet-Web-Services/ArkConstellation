@@ -17,7 +17,7 @@ What's still open, blocking, or needs a follow-up decision. See `STATUS.md` for 
   2. **`x/mint` `MaxSupply` param** — a real consensus-rule and wire-format divergence from stock `cosmos-sdk` that any external tooling/explorer/genesis-migration script needs to account for.
   3. **`x/auth/tx/query.go`'s `formatTxResults` silent-drop behavior** — `GetTxsEvent`/tx-search now silently drops undecodable txs instead of erroring, which can mask indexing corruption.
 
-  Full technical detail on all three: `docs/proof/fork-audit-cosmos-sdk.md`, "2. NEEDS REVIEW". This should get a named owner and a target date before the next SDK re-pin lands, not carry forward silently again.
+  Full technical detail on all three: `docs/proof/fork-audit-cosmos-sdk.md`, "2. NEEDS REVIEW". Tracked as [#42](https://github.com/Worldstreet-Web-Services/ArkConstellation/issues/42) — needs a named owner and a target date before the next SDK re-pin lands, not carry forward silently again.
 
 ## Explicitly flagged, not fixed (out of this track's asked-for scope)
 
