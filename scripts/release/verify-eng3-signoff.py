@@ -12,11 +12,21 @@ running chain records `cluster_online: false` / zero counters and is rejected,
 regardless of what its own `pass` field claims.
 
 Checks:
+0. Evidence is bound to the commit being released (not stale vs. source).
 1. Formal Track 3 milestone reports (Day 1 / Day 2 / Day 3 certification).
 2. Static analysis severities (GoSec HIGH, Semgrep ERROR, Slither High/Medium)
    plus Slither coverage of the contract that actually ships.
 3. Mempool, validator resiliency, circuit breaker and JSON-RPC results.
 4. Launch guardrail contracts and hard-reboot state recovery.
+
+KNOWN LIMITATION: every check here trusts the contents of files checked out
+of the ref under test. Source and evidence are both ordinary tracked files,
+so anyone with push access can edit both together and nothing in this
+script can distinguish that from a genuine Eng 3 run — see the check-0
+comment below for what it would actually take to close that gap. This gate
+raises the bar against stale/incomplete/self-contradicting evidence; it is
+not a substitute for code review or a signed, independently-produced
+attestation.
 """
 
 import re
@@ -234,6 +244,32 @@ def verify_gate(target_tag: str = "") -> bool:
     # requiring the evidence directory to have last changed at or after the
     # last change to the code/contracts it certifies, as of the commit
     # being released.
+    #
+    # KNOWN LIMITATION — not closed by this check, and not closable by any
+    # script running against files in this repo:
+    #
+    # This only proves the evidence isn't OLDER than the source. It cannot
+    # prove the evidence is GENUINE, because both the source and its
+    # evidence are ordinary tracked files that anyone with push access can
+    # edit together in the same commit (or push of two commits). A single
+    # bad actor — or a compromised account — can write malicious code and
+    # simultaneously hand-edit scripts/chaos/reports/*.json to claim a full
+    # pass; nothing here can tell that apart from a real Eng 3 run, because
+    # git authorship/timestamps are self-reported and trivially spoofable
+    # by anyone who can already push.
+    #
+    # Actually closing this requires a trust anchor outside this checkout:
+    #   (a) a second, independent human approval on changes under
+    #       scripts/chaos/reports/** and scripts/release/** (CODEOWNERS +
+    #       branch protection requiring code-owner review — this repo
+    #       currently requires no PR review at all on base-genesis), or
+    #   (b) evidence produced by a live CI run of the chaos suite and
+    #       cryptographically attested (e.g. actions/attest-build-provenance,
+    #       already used elsewhere in this workflow for release binaries),
+    #       verified here instead of trusting file contents.
+    # Both are deliberate, repo-wide policy/infrastructure decisions and are
+    # explicitly out of scope for this gate script — tracked as a follow-up,
+    # not implemented here.
     print(f"{BOLD}0. Verifying Eng 3 Evidence Is Bound To The Release Commit...{RESET}")
     target_commit = resolve_commit(target_tag) if target_tag else None
     if target_commit is None:
