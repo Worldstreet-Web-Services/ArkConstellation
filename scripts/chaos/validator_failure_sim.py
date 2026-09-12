@@ -180,7 +180,8 @@ def run_validator_failure_simulation(
             except Exception:
                 pass
 
-    liveness_maintained = len(fault_blocks) > 0 if cluster_online else True
+    # Fail closed: an unreachable cluster proves nothing about liveness.
+    liveness_maintained = cluster_online and len(fault_blocks) > 0
     print(f"[*] Outage Liveness Test : {GREEN if liveness_maintained else RED}{'PASS (Continuous block production)' if liveness_maintained else 'FAIL'}{RESET}")
 
     # 4. Recovery & Fast-Sync Catch-Up
@@ -201,7 +202,7 @@ def run_validator_failure_simulation(
 
     time.sleep(recovery_wait_secs)
     end_height = client.get_block_height() if cluster_online else start_height
-    fast_sync_verified = (end_height >= f_last_h) if cluster_online else True
+    fast_sync_verified = cluster_online and (end_height >= f_last_h)
 
     print(f"[*] Fast-Sync Catch-up   : {GREEN}{'VERIFIED (Node synced to tip)' if fast_sync_verified else 'FAIL'}{RESET}")
 
@@ -216,9 +217,22 @@ def run_validator_failure_simulation(
         "start_height": start_height,
         "end_height": end_height,
         "baseline_rate_bps": baseline_rate,
+        # Raw per-cycle samples taken during the fault window, so a
+        # consumer can independently recompute liveness rather than
+        # trusting liveness_maintained/fast_sync_verified as-is.
+        "fault_blocks": fault_blocks,
+        "fault_window_last_height": f_last_h,
         "liveness_maintained": liveness_maintained,
         "fast_sync_verified": fast_sync_verified,
-        "pass": liveness_maintained and fast_sync_verified
+        "executed": cluster_online,
+        "pass": (
+            cluster_online
+            and fault_injected
+            and len(validators) > 0
+            and end_height > start_height
+            and liveness_maintained
+            and fast_sync_verified
+        )
     }
 
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
