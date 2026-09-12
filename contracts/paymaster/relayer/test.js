@@ -5,8 +5,8 @@ const { ethers } = require('ethers');
 const RPC_URL = process.env.RPC_URL || 'https://evm.34.60.137.196.sslip.io';
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '9000');
-const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS || '0xE2d9782764B5C26b95DFDe9bE97793eBdeb8838C';
-const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS || '0x081AB05079A46D3b22623CF6e506Dc5806430bE3';
+const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS || '0xD6F4B34b519838DA78C03005ccdafFE94F58077E';
+const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS || '0x6493ff1902c0cF198f279726d387c783b83bDe05';
 
 // Minimal ABI for testing
 const PAYMASTER_ABI = [

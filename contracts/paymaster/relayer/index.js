@@ -5,13 +5,15 @@ const { ethers } = require('ethers');
 const RPC_URL = process.env.RPC_URL || 'https://evm.34.60.137.196.sslip.io';
 const PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY || process.env.PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '9000');
-const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS || '0xE2d9782764B5C26b95DFDe9bE97793eBdeb8838C';
-const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS || '0x081AB05079A46D3b22623CF6e506Dc5806430bE3';
+const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS || '0xD6F4B34b519838DA78C03005ccdafFE94F58077E';
+const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS || '0x6493ff1902c0cF198f279726d387c783b83bDe05';
 
-// ABI for EntryPoint handleOps function
+// ABI for EntryPoint handleOps function - matches the PackedUserOperation
+// shape MinimalEntryPoint actually deploys with (accountGasLimits/gasFees
+// packed into two bytes32 fields, not separate uint256 fields).
 const ENTRY_POINT_ABI = [
-    'function handleOps((address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData, bytes signature)[] calldata ops, address beneficiary) external payable',
-    'function getUserOpHash((address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData, bytes signature) calldata userOp) external view returns (bytes32)',
+    'function handleOps(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature)[] calldata ops, address payable beneficiary) external payable',
+    'function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) calldata userOp) external view returns (bytes32)',
     'function getNonce(address sender, uint192 key) external view returns (uint256 nonce)'
 ];
 
@@ -141,11 +143,9 @@ async function main() {
     //     nonce: 0n,
     //     initCode: '0x',
     //     callData: '0x...',
-    //     callGasLimit: 100000n,
-    //     verificationGasLimit: 100000n,
+    //     accountGasLimits: '0x...', // verificationGasLimit (high 128 bits) || callGasLimit (low 128 bits)
     //     preVerificationGas: 21000n,
-    //     maxFeePerGas: 1000000000n,
-    //     maxPriorityFeePerGas: 1000000000n,
+    //     gasFees: '0x...', // maxPriorityFeePerGas (high 128 bits) || maxFeePerGas (low 128 bits)
     //     paymasterAndData: PAYMASTER_ADDRESS + '00'.repeat(20), // Paymaster address + empty data
     //     signature: '0x...'
     // };

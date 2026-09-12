@@ -34,7 +34,6 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
     error FailedOp(uint256 index, address sender, string reason);
     error NotPaymaster();
     error InsufficientDeposit();
-    error InvalidCaller();
 
     // Events
     event UserOperationEvent(
@@ -66,23 +65,28 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
         address payable beneficiary
     ) external payable {
         uint256 opslen = ops.length;
+        uint256 collected = 0;
         for (uint256 i = 0; i < opslen; i++) {
-            _handleOp(ops[i], beneficiary);
+            collected += _handleOp(ops[i], beneficiary);
         }
 
-        // Send remaining gas to beneficiary
-        if (beneficiary != address(0) && address(this).balance > 0) {
-            beneficiary.transfer(address(this).balance);
+        // Send only what was actually collected from this batch's paymasters
+        // to beneficiary - never the whole contract balance, which would
+        // include every other paymaster's untouched deposit.
+        if (beneficiary != address(0) && collected > 0) {
+            uint256 payout = collected > address(this).balance ? address(this).balance : collected;
+            beneficiary.transfer(payout);
         }
     }
 
     /**
      * @dev Internal function to handle a single user operation
+     * @return gasCost the amount deducted from the sponsoring paymaster's deposit, if any
      */
     function _handleOp(
         PackedUserOperation calldata op,
         address payable beneficiary
-    ) private {
+    ) private returns (uint256 gasCost) {
         address sender = op.sender;
 
         // Check nonce
@@ -90,50 +94,93 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
             revert FailedOp(0, sender, "Invalid nonce");
         }
 
+        bytes32 userOpHash = getUserOpHash(op);
+        _validateSignature(sender, userOpHash, op.signature);
+
         // Parse paymaster address
         address paymaster = _parsePaymasterAndData(op.paymasterAndData);
+        uint256 requiredGas = _getRequiredGas(op);
+
+        // Deduct from paymaster deposit before the external validation call
+        // so a reentrant call from the paymaster sees the debited balance.
+        if (paymaster != address(0)) {
+            if (balanceOf[paymaster] < requiredGas) {
+                revert InsufficientDeposit();
+            }
+            balanceOf[paymaster] -= requiredGas;
+            gasCost = requiredGas;
+        }
+
+        // Increment nonce before any external call for the same reason.
+        nonce[sender]++;
 
         // Validate with paymaster if present
         if (paymaster != address(0)) {
-            bytes32 userOpHash = getUserOpHash(op);
             (, uint256 validationData) = IMinimalPaymaster(paymaster).validatePaymasterUserOp(
                 op,
                 userOpHash,
-                _getRequiredGas(op)
+                requiredGas
             );
 
             if (validationData != VALID_SIG) {
                 revert FailedOp(0, sender, "Paymaster validation failed");
             }
-
-            // Deduct from paymaster deposit
-            uint256 requiredGas = _getRequiredGas(op);
-            if (balanceOf[paymaster] < requiredGas) {
-                revert InsufficientDeposit();
-            }
-            balanceOf[paymaster] -= requiredGas;
         }
 
-        // Increment nonce
-        nonce[sender]++;
-
         // Execute the call
-        bool success;
-        bytes memory result;
-        (success, result) = sender.call{gas: _getCallGasLimit(op)}(op.callData);
+        (bool success, bytes memory result) = sender.call{gas: _getCallGasLimit(op)}(op.callData);
 
         if (!success) {
             revert FailedOp(0, sender, _getRevertMessage(result));
         }
 
         emit UserOperationEvent(
-            getUserOpHash(op),
+            userOpHash,
             sender,
             paymaster,
             success,
-            0, // actualGasCost - simplified for MVP
-            0  // actualGasUsed - simplified for MVP
+            gasCost,
+            0 // actualGasUsed - simplified for MVP
         );
+    }
+
+    /**
+     * @dev Recover the signer of userOpHash from op.signature and require it to
+     *      match sender. This minimal EntryPoint has no account contracts to call
+     *      into for validation (no IAccount implementations exist in this repo),
+     *      so sender is treated as the EOA that must have signed the operation.
+     */
+    function _validateSignature(
+        address sender,
+        bytes32 userOpHash,
+        bytes calldata signature
+    ) private pure {
+        if (signature.length != 65) {
+            revert InvalidSignature();
+        }
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
+        }
+
+        // Reject upper-range s to avoid ECDSA signature malleability.
+        if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) {
+            revert InvalidSignature();
+        }
+        if (v != 27 && v != 28) {
+            revert InvalidSignature();
+        }
+
+        bytes32 ethSignedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
+        address recovered = ecrecover(ethSignedHash, v, r, s);
+        if (recovered == address(0) || recovered != sender) {
+            revert InvalidSignature();
+        }
     }
 
     /**
@@ -152,16 +199,16 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
     }
 
     /**
-     * @dev Withdraw funds to an account
+     * @dev Withdraw funds from the caller's own deposit to an arbitrary recipient.
+     *      msg.sender is the depositor being debited; withdrawAddress is just the
+     *      recipient, and the two may differ (e.g. a paymaster contract withdrawing
+     *      to its owner's EOA).
      */
     function withdrawTo(address payable withdrawAddress, uint256 withdrawAmount) external {
-        if (msg.sender != withdrawAddress) {
-            revert InvalidCaller();
-        }
-        if (balanceOf[withdrawAddress] < withdrawAmount) {
+        if (balanceOf[msg.sender] < withdrawAmount) {
             revert InsufficientDeposit();
         }
-        balanceOf[withdrawAddress] -= withdrawAmount;
+        balanceOf[msg.sender] -= withdrawAmount;
         withdrawAddress.transfer(withdrawAmount);
     }
 
