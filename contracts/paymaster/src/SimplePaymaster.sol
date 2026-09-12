@@ -27,6 +27,9 @@ contract SimplePaymaster is IPaymaster {
     error Unauthorized();
     error InsufficientFunds();
     error InvalidSender();
+    error InvalidOwner();
+    error InvalidAmount();
+    error WithdrawFailed();
 
     /**
      * @dev Constructor to initialize the paymaster with the EntryPoint address.
@@ -46,11 +49,11 @@ contract SimplePaymaster is IPaymaster {
      * @return context The context data (empty for simple paymaster).
      * @return validationData The validation result (0 for success).
      */
-    function validatePaymasterUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 maxCost
-    ) external override returns (bytes memory context, uint256 validationData) {
+    function validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
+        external
+        override
+        returns (bytes memory context, uint256 validationData)
+    {
         // Ensure the caller is the EntryPoint
         if (msg.sender != address(entryPoint)) {
             revert InvalidSender();
@@ -73,12 +76,10 @@ contract SimplePaymaster is IPaymaster {
      * @param actualGasCost The actual gas cost of the operation.
      * @param actualUserOpFeePerGas The actual fee per gas paid by the user operation.
      */
-    function postOp(
-        PostOpMode mode,
-        bytes calldata context,
-        uint256 actualGasCost,
-        uint256 actualUserOpFeePerGas
-    ) external override {
+    function postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost, uint256 actualUserOpFeePerGas)
+        external
+        override
+    {
         // Ensure the caller is the EntryPoint
         if (msg.sender != address(entryPoint)) {
             revert InvalidSender();
@@ -99,7 +100,12 @@ contract SimplePaymaster is IPaymaster {
         if (address(this).balance < amount) {
             revert InsufficientFunds();
         }
-        to.transfer(amount);
+        // Full-gas call instead of transfer()'s 2300-gas stipend, so a
+        // contract recipient (e.g. a multisig owner) doesn't get funds stranded.
+        (bool sent,) = to.call{value: amount}("");
+        if (!sent) {
+            revert WithdrawFailed();
+        }
         emit FundsWithdrawn(to, amount);
     }
 
@@ -111,11 +117,12 @@ contract SimplePaymaster is IPaymaster {
         if (msg.sender != owner) {
             revert Unauthorized();
         }
+        if (newOwner == address(0)) {
+            revert InvalidOwner();
+        }
         emit OwnerUpdated(owner, newOwner);
         owner = newOwner;
     }
-
-    
 
     /**
      * @dev Allows the paymaster to receive ETH for sponsoring gas.
@@ -129,6 +136,9 @@ contract SimplePaymaster is IPaymaster {
     function depositToEntryPoint(uint256 amount) external payable {
         if (msg.sender != owner) {
             revert Unauthorized();
+        }
+        if (msg.value != amount) {
+            revert InvalidAmount();
         }
         entryPoint.depositTo{value: amount}(address(this));
     }

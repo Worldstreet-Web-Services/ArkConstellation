@@ -15,11 +15,13 @@ interface IMinimalEntryPoint {
  * @dev Minimal IPaymaster interface
  */
 interface IMinimalPaymaster {
-    function validatePaymasterUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 maxCost
-    ) external returns (bytes memory context, uint256 validationData);
+    function validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
+        external
+        returns (bytes memory context, uint256 validationData);
+
+    // mode is IPaymaster.PostOpMode (0 = opSucceeded, 1 = opReverted); enums
+    // ABI-encode as uint8, so this matches any real IPaymaster.postOp caller.
+    function postOp(uint8 mode, bytes calldata context, uint256 actualGasCost, uint256 actualUserOpFeePerGas) external;
 }
 
 /**
@@ -35,6 +37,8 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
     error NotPaymaster();
     error InsufficientDeposit();
     error BeneficiaryPayoutFailed();
+    error OnlySelf();
+    error WithdrawFailed();
 
     // Events
     event UserOperationEvent(
@@ -61,14 +65,16 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
      * @param ops Array of user operations to execute
      * @param beneficiary Address to receive the gas refund
      */
-    function handleOps(
-        PackedUserOperation[] calldata ops,
-        address payable beneficiary
-    ) external payable {
+    function handleOps(PackedUserOperation[] calldata ops, address payable beneficiary) external {
         uint256 opslen = ops.length;
         uint256 collected = 0;
         for (uint256 i = 0; i < opslen; i++) {
-            collected += _handleOp(ops[i], beneficiary);
+            // Route through an external self-call so a single failing op can
+            // be caught and skipped instead of reverting the whole batch and
+            // undoing every op already executed earlier in the loop.
+            try this.handleOp(ops[i], beneficiary) returns (uint256 opGasCost) {
+                collected += opGasCost;
+            } catch {}
         }
 
         // Send only what was actually collected from this batch's paymasters
@@ -79,7 +85,7 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
             // Forward full remaining gas instead of transfer()'s 2300-gas
             // stipend, so a contract beneficiary with normal receive logic
             // doesn't revert the whole batch.
-            (bool sent, ) = beneficiary.call{value: payout}("");
+            (bool sent,) = beneficiary.call{value: payout}("");
             if (!sent) {
                 revert BeneficiaryPayoutFailed();
             }
@@ -87,13 +93,15 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
     }
 
     /**
-     * @dev Internal function to handle a single user operation
-     * @return gasCost the amount deducted from the sponsoring paymaster's deposit, if any
+     * @dev Handle a single user operation. External and self-call-only so
+     *      handleOps can wrap it in try/catch for per-op batch isolation.
+     * @return gasCost the actual wei cost charged to the sponsoring paymaster, if any
      */
-    function _handleOp(
-        PackedUserOperation calldata op,
-        address payable beneficiary
-    ) private returns (uint256 gasCost) {
+    function handleOp(PackedUserOperation calldata op, address payable beneficiary) external returns (uint256 gasCost) {
+        if (msg.sender != address(this)) {
+            revert OnlySelf();
+        }
+
         address sender = op.sender;
 
         // Check nonce
@@ -106,9 +114,10 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
 
         // Parse paymaster address
         address paymaster = _parsePaymasterAndData(op.paymasterAndData);
+        uint256 maxFeePerGas = _getMaxFeePerGas(op);
         // requiredGas is in gas units; deposits/payouts are denominated in wei,
         // so convert using the op's own max fee per gas before touching balances.
-        uint256 requiredWei = _getRequiredGas(op) * _getMaxFeePerGas(op);
+        uint256 requiredWei = _getRequiredGas(op) * maxFeePerGas;
 
         // Deduct from paymaster deposit before the external validation call
         // so a reentrant call from the paymaster sees the debited balance.
@@ -117,40 +126,61 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
                 revert InsufficientDeposit();
             }
             balanceOf[paymaster] -= requiredWei;
-            gasCost = requiredWei;
         }
 
         // Increment nonce before any external call for the same reason.
         nonce[sender]++;
 
         // Validate with paymaster if present
+        bytes memory context;
         if (paymaster != address(0)) {
-            (, uint256 validationData) = IMinimalPaymaster(paymaster).validatePaymasterUserOp(
-                op,
-                userOpHash,
-                requiredWei
-            );
+            uint256 validationData;
+            (context, validationData) =
+                IMinimalPaymaster(paymaster).validatePaymasterUserOp(op, userOpHash, requiredWei);
 
             if (validationData != VALID_SIG) {
                 revert FailedOp(0, sender, "Paymaster validation failed");
             }
         }
 
-        // Execute the call
+        // Execute the call, measuring actual gas used so the paymaster is
+        // charged for real consumption rather than permanently overcharged
+        // by its full gas-limit estimate.
+        uint256 gasBefore = gasleft();
         (bool success, bytes memory result) = sender.call{gas: _getCallGasLimit(op)}(op.callData);
+        uint256 actualGasUsed = gasBefore - gasleft();
 
         if (!success) {
             revert FailedOp(0, sender, _getRevertMessage(result));
         }
 
-        emit UserOperationEvent(
-            userOpHash,
-            sender,
-            paymaster,
-            success,
-            gasCost,
-            0 // actualGasUsed - simplified for MVP
-        );
+        if (paymaster != address(0)) {
+            uint256 actualGasCost = actualGasUsed * maxFeePerGas;
+            if (actualGasCost > requiredWei) {
+                actualGasCost = requiredWei;
+            }
+            // Refund the unused portion of the pre-charged estimate before
+            // the postOp callback, so a reentrant call sees the corrected
+            // balance rather than the stale full-estimate debit.
+            if (requiredWei > actualGasCost) {
+                balanceOf[paymaster] += (requiredWei - actualGasCost);
+            }
+            gasCost = actualGasCost;
+
+            // Per ERC-4337 convention, an empty context means the paymaster
+            // opted out of the postOp hook (as SimplePaymaster does today).
+            if (context.length > 0) {
+                IMinimalPaymaster(paymaster)
+                    .postOp(
+                        uint8(0), // opSucceeded
+                        context,
+                        actualGasCost,
+                        maxFeePerGas
+                    );
+            }
+        }
+
+        emit UserOperationEvent(userOpHash, sender, paymaster, success, gasCost, actualGasUsed);
     }
 
     /**
@@ -159,11 +189,7 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
      *      into for validation (no IAccount implementations exist in this repo),
      *      so sender is treated as the EOA that must have signed the operation.
      */
-    function _validateSignature(
-        address sender,
-        bytes32 userOpHash,
-        bytes calldata signature
-    ) private pure {
+    function _validateSignature(address sender, bytes32 userOpHash, bytes calldata signature) private pure {
         if (signature.length != 65) {
             revert InvalidSignature();
         }
@@ -234,7 +260,12 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
             revert InsufficientDeposit();
         }
         balanceOf[msg.sender] -= withdrawAmount;
-        withdrawAddress.transfer(withdrawAmount);
+        // Full-gas call instead of transfer()'s 2300-gas stipend, so a
+        // contract recipient (e.g. a multisig) doesn't get funds stranded.
+        (bool sent,) = withdrawAddress.call{value: withdrawAmount}("");
+        if (!sent) {
+            revert WithdrawFailed();
+        }
     }
 
     /**
@@ -282,7 +313,13 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
      * @dev Get revert message from result bytes
      */
     function _getRevertMessage(bytes memory result) private pure returns (string memory) {
-        if (result.length < 68) {
+        // Only the standard Error(string) selector is safe to decode as a
+        // string; anything else (a custom error, Panic(uint256), no data)
+        // would make abi.decode panic and mask the real revert reason.
+        // casting to 'bytes4' is safe here: it only ever reads the leading
+        // 4 bytes of result as the error selector, never truncates a value.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (result.length < 68 || bytes4(result) != bytes4(0x08c379a0)) {
             return "Transaction reverted";
         }
         // Skip the error selector (4 bytes)

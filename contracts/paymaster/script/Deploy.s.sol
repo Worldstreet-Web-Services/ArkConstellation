@@ -22,7 +22,7 @@ contract DeployScript is Script {
 
         // Fund the paymaster with some ETH for gas sponsorship
         uint256 fundAmount = 1 ether; // 1 KASH for gas sponsorship
-        (bool success, ) = address(paymaster).call{value: fundAmount}("");
+        (bool success,) = address(paymaster).call{value: fundAmount}("");
         require(success, "Failed to fund paymaster");
         console.log("Paymaster funded with:", fundAmount, "wei");
 
