@@ -18,6 +18,7 @@ already running.
 | File | Proposal | Status |
 |---|---|---|
 | `staking-unbonding-21d.json` | #3 | ✅ Passed 2026-09-04 — 180,000,000 KASH yes / 0 no. `unbonding_time` 300s → 1814400s |
+| `activate-static-precompiles.json` | #8 | ✅ Passed by 2026-09-10 — `evm.params.active_static_precompiles` `[]` → 9 addresses. Verified end-to-end: ICS20 precompile call produced a real `send_packet` on Ark and a matching receive on MANTRA |
 
 ## Submitting
 
@@ -27,6 +28,13 @@ arkd tx gov submit-proposal networks/devnet/proposals/<file>.json \
   --chain-id arkdevnet_9000-1 --node http://sentry-0:26657 \
   --gas auto --gas-adjustment 1.5 --gas-prices 1000000000esp --yes
 ```
+
+For a `MsgUpdateParams`-style proposal that replaces a whole params struct
+(rather than a single field), run `verify-live-params.sh` immediately before
+submitting. It diffs the proposal's non-target fields against what's live on
+chain and refuses to pass if anything drifted since the proposal's snapshot
+was taken — otherwise the wholesale replace silently reverts that drift with
+no error from anything.
 
 Two things that are easy to get wrong, both of which cost a failed transaction:
 

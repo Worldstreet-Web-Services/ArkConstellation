@@ -1,0 +1,94 @@
+{
+  "_comment": [
+    "Activates the EVM module's static precompiles (staking, distribution, ICS20",
+    "IBC transfer, bank, gov, slashing, bech32, p256, plus Ark's custom distrclaim)",
+    "which have been INACTIVE since genesis.",
+    "",
+    "ROOT CAUSE: networks/devnet/genesis-template.json's evm.params block only",
+    "ever set evm_denom and extended_denom_options, leaving",
+    "active_static_precompiles as its zero value (empty list). The chain's own",
+    "Go code (app.go InitGenesis path, ~line 1302) DOES populate this list",
+    "correctly, but the live devnet's actual genesis.json (confirmed by reading",
+    "it directly off a running node) shows an empty list — the template-based",
+    "genesis generation used for this devnet bypassed that code path.",
+    "",
+    "OBSERVED EFFECT: with active_static_precompiles empty,",
+    "IsAvailableStaticPrecompile() (x/vm/keeper/static_precompiles.go) returns",
+    "false for every static precompile address, so GetPrecompilesCallHook never",
+    "installs them into the EVM call. A call to 0x...0802 (ICS20) is then just a",
+    "call to a plain address with no code: it 'succeeds' at the EVM level,",
+    "consumes real gas at the cold-address-access rate, and does NOTHING — no",
+    "IBC packet, no error, no visible failure signal. Verified live: a real",
+    "transfer() call with 800,000 gas supplied consumed exactly 400,000 and",
+    "created zero IBC packets on either side of the channel (confirmed via both",
+    "the chain's own tx indexer and `hermes query packet pending`).",
+    "",
+    "Dynamic precompiles (the auto-created ERC20 wrapper for each IBC/token-",
+    "factory denom) are NOT affected — those go through a completely separate,",
+    "ungated lookup path (erc20Keeper.GetERC20PrecompileInstance), which is why",
+    "ERC20 balance reads/transfers for KASH/OM have worked fine all along while",
+    "IBC-via-EVM-wallet silently did nothing.",
+    "",
+    "MsgUpdateParams replaces the params struct wholesale — every field must be",
+    "present, not just the one being changed. Values below are the live devnet",
+    "params (queried via /cosmos/evm/vm/v1/params) with",
+    "active_static_precompiles corrected and nothing else changed.",
+    "",
+    "Because this is a wholesale replace, submitting on a stale snapshot would",
+    "silently revert any field that changed on live devnet after this snapshot",
+    "was taken. Run verify-live-params.sh immediately before submitting to",
+    "confirm nothing else has drifted:",
+    "  networks/devnet/proposals/verify-live-params.sh [lcd-url]",
+    "",
+    "Submit:  arkd tx gov submit-proposal \\",
+    "           networks/devnet/proposals/activate-static-precompiles.json \\",
+    "           --from <key> --chain-id arkdevnet_9000-1 \\",
+    "           --gas auto --gas-adjustment 1.5 --gas-prices 1000000000esp",
+    "Verify:  arkd query evm params  (or GET /cosmos/evm/vm/v1/params)",
+    "",
+    "FOLLOW-UP NEEDED (not done by this proposal): patch",
+    "networks/devnet/genesis-template.json's evm.params block to include this",
+    "same active_static_precompiles list, so a future devnet reset doesn't",
+    "reintroduce this bug from genesis."
+  ],
+  "messages": [
+    {
+      "@type": "/cosmos.evm.vm.v1.MsgUpdateParams",
+      "authority": "ark10d07y265gmmuvt4z0w9aw880jnsr700j2cu5hn",
+      "params": {
+        "evm_denom": "esp",
+        "extra_eips": [],
+        "evm_channels": [],
+        "access_control": {
+          "create": {
+            "access_type": "ACCESS_TYPE_PERMISSIONLESS",
+            "access_control_list": []
+          },
+          "call": {
+            "access_type": "ACCESS_TYPE_PERMISSIONLESS",
+            "access_control_list": []
+          }
+        },
+        "active_static_precompiles": [
+          "0x0000000000000000000000000000000000000100",
+          "0x0000000000000000000000000000000000000400",
+          "0x0000000000000000000000000000000000000800",
+          "0x0000000000000000000000000000000000000801",
+          "0x0000000000000000000000000000000000000802",
+          "0x0000000000000000000000000000000000000804",
+          "0x0000000000000000000000000000000000000805",
+          "0x0000000000000000000000000000000000000806",
+          "0x0000000000000000000000000000000000000a01"
+        ],
+        "history_serve_window": "8192",
+        "extended_denom_options": {
+          "extended_denom": "espees"
+        }
+      }
+    }
+  ],
+  "metadata": "Activate EVM static precompiles (staking/distribution/ICS20/bank/gov/slashing/bech32/p256/distrclaim), inactive since genesis",
+  "deposit": "1000000000000000000esp",
+  "title": "Activate EVM static precompiles, inactive since genesis",
+  "summary": "active_static_precompiles has been empty since arkdevnet's genesis (a gap in the devnet genesis template, not the chain's Go defaults). This silently disables every static precompile including ICS20 (IBC-via-EVM-wallet transfers), staking, distribution, bank, gov, slashing, bech32, p256, and Ark's custom distrclaim precompile -- calls to these addresses succeed at the EVM level while doing nothing, with no visible error. This proposal activates the full correct list; a companion fix to the genesis template prevents recurrence on reset."
+}
