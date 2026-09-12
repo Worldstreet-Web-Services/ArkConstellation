@@ -2,18 +2,20 @@
 pragma solidity ^0.8.0;
 
 import "account-abstraction/interfaces/IPaymaster.sol";
+import "account-abstraction/interfaces/IEntryPoint.sol";
 import "account-abstraction/interfaces/PackedUserOperation.sol";
-import "./MinimalEntryPoint.sol";
 
 /**
  * @title SimplePaymaster
- * @dev A simple paymaster that sponsors gas for all user operations.
+ * @dev A simple paymaster that sponsors gas for all user operations, built
+ *      against the audited eth-infinitism EntryPoint rather than a custom
+ *      reimplementation of it.
  *      For MVP purposes, this paymaster does not enforce any restrictions.
  *      In production, you should add whitelisting, rate limiting, or other controls.
  */
 contract SimplePaymaster is IPaymaster {
     // The EntryPoint contract
-    IMinimalEntryPoint public immutable entryPoint;
+    IEntryPoint public immutable entryPoint;
 
     // Owner of the paymaster (can withdraw funds)
     address public owner;
@@ -35,7 +37,7 @@ contract SimplePaymaster is IPaymaster {
      * @dev Constructor to initialize the paymaster with the EntryPoint address.
      * @param _entryPoint The address of the EntryPoint contract.
      */
-    constructor(IMinimalEntryPoint _entryPoint) {
+    constructor(IEntryPoint _entryPoint) {
         entryPoint = _entryPoint;
         owner = msg.sender;
     }

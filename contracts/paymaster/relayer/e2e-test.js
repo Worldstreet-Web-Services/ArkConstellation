@@ -5,12 +5,22 @@ const { ethers } = require('ethers');
 const RPC_URL = process.env.RPC_URL || 'https://evm.34.60.137.196.sslip.io';
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '9000');
-const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS || '0xD6F4B34b519838DA78C03005ccdafFE94F58077E';
-const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS || '0x6493ff1902c0cF198f279726d387c783b83bDe05';
+// No hardcoded fallback addresses: this now targets the real eth-infinitism
+// EntryPoint (see issue #44), which has not been deployed to any live
+// network yet. The old fallback pointed at the now-removed MinimalEntryPoint
+// deployment - silently reusing it would be misleading, not helpful.
+const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS;
+const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS;
+
+if (!ENTRY_POINT_ADDRESS || !PAYMASTER_ADDRESS) {
+    console.error('ENTRY_POINT_ADDRESS and PAYMASTER_ADDRESS must be set in .env');
+    process.exit(1);
+}
 
 // ABIs
 const ENTRY_POINT_ABI = [
-    'function handleOps(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature)[] calldata ops, address payable beneficiary) external payable',
+    // handleOps isn't payable on the real EntryPoint.
+    'function handleOps(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature)[] calldata ops, address payable beneficiary) external',
     'function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) calldata userOp) external view returns (bytes32)',
     'function getNonce(address sender, uint192 key) external view returns (uint256)',
     'function depositTo(address account) external payable',
@@ -97,7 +107,14 @@ async function runE2ETest() {
             accountGasLimits: ethers.hexlify(ethers.zeroPadValue(ethers.toBeHex(100000), 32)), // verificationGasLimit || callGasLimit
             preVerificationGas: 21000n,
             gasFees: ethers.hexlify(ethers.zeroPadValue(ethers.toBeHex(1000000000), 32)), // maxPriorityFeePerGas || maxFeePerGas
-            paymasterAndData: PAYMASTER_ADDRESS + '00'.repeat(20), // Paymaster address + empty data
+            // Real layout: paymaster (20 bytes) || paymasterVerificationGasLimit
+            // (16 bytes) || paymasterPostOpGasLimit (16 bytes) - not just the
+            // bare address the old MinimalEntryPoint accepted.
+            paymasterAndData: ethers.concat([
+                PAYMASTER_ADDRESS,
+                ethers.zeroPadValue(ethers.toBeHex(100000), 16),
+                ethers.zeroPadValue(ethers.toBeHex(50000), 16)
+            ]),
             signature: '0x'
         };
 

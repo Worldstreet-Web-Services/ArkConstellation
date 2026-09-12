@@ -5,8 +5,17 @@ const { ethers } = require('ethers');
 const RPC_URL = process.env.RPC_URL || 'https://evm.34.60.137.196.sslip.io';
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '9000');
-const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS || '0xD6F4B34b519838DA78C03005ccdafFE94F58077E';
-const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS || '0x6493ff1902c0cF198f279726d387c783b83bDe05';
+// No hardcoded fallback addresses: this now targets the real eth-infinitism
+// EntryPoint (see issue #44), which has not been deployed to any live
+// network yet. The old fallback pointed at the now-removed MinimalEntryPoint
+// deployment - silently reusing it would be misleading, not helpful.
+const ENTRY_POINT_ADDRESS = process.env.ENTRY_POINT_ADDRESS;
+const PAYMASTER_ADDRESS = process.env.PAYMASTER_ADDRESS;
+
+if (!ENTRY_POINT_ADDRESS || !PAYMASTER_ADDRESS) {
+    console.error('ENTRY_POINT_ADDRESS and PAYMASTER_ADDRESS must be set in .env');
+    process.exit(1);
+}
 
 // Minimal ABI for testing
 const PAYMASTER_ABI = [

@@ -62,13 +62,13 @@ Single local node booted from HEAD:
 
 ### Gas Sponsorship (Paymaster) Infrastructure
 - **Status**: Implemented on branch `account-abstraction`
-- **Implementation**: ERC-4337 Paymaster pattern with minimal EntryPoint (6628 bytes) to fit within EIP-170 limits
-- **Deployed Contracts (Devnet)**:
-  - EntryPoint: `0xD6F4B34b519838DA78C03005ccdafFE94F58077E`
-  - SimplePaymaster: `0x6493ff1902c0cF198f279726d387c783b83bDe05`
-- **Components**: MinimalEntryPoint, SimplePaymaster, Node.js relayer service
-- **Documentation**: Decision recorded in `docs/decisions/module-and-config-decisions.md` #18
-- **Note**: Standard ERC-4337 EntryPoint too large (29425 bytes > 24576 limit); custom minimal implementation used for MVP
+- **Implementation**: ERC-4337 Paymaster pattern built on the audited eth-infinitism `EntryPoint` and `SimpleAccountFactory`/`SimpleAccount` (vendored as submodules), not a custom reimplementation.
+- **Superseded**: An earlier custom `MinimalEntryPoint` was written instead of the real EntryPoint because it measured at 29,425 bytes, over the 24,576 EIP-170 limit - but that measurement was taken with the Solidity optimizer off. With the optimizer on (default 200 runs, no via-IR), the real `EntryPoint` compiles to 16,399 bytes. `MinimalEntryPoint` needed two review rounds to close real bugs in its hand-rolled reimplementation of validation/accounting/reentrancy handling; it has been removed in favor of the audited implementation. See issue #44 for the full history.
+- **Deployed Contracts (Devnet)**: **stale, pending redeploy.** The addresses below were deployed against the now-removed `MinimalEntryPoint` and do not correspond to the current code. Nothing has been redeployed yet.
+  - ~~EntryPoint: `0xD6F4B34b519838DA78C03005ccdafFE94F58077E`~~
+  - ~~SimplePaymaster: `0x6493ff1902c0cF198f279726d387c783b83bDe05`~~
+- **Components**: `EntryPoint` (eth-infinitism), `SimpleAccountFactory`/`SimpleAccount` (eth-infinitism), `SimplePaymaster`, Node.js relayer service
+- **Documentation**: Decision recorded in `docs/decisions/module-and-config-decisions.md` #18 (superseded, see above)
   > ⚠️ **The live devnet does not match this.** `/cosmos/evm/feemarket/v1/params` on
   > `arkdevnet_9000-1` returns `min_gas_price: 1000000000`, not `0`, as of 2026-09-04.
   > A non-zero chain-wide floor means genuinely zero-fee sponsored transactions are
