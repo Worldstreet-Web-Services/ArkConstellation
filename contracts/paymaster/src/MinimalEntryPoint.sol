@@ -34,6 +34,7 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
     error FailedOp(uint256 index, address sender, string reason);
     error NotPaymaster();
     error InsufficientDeposit();
+    error BeneficiaryPayoutFailed();
 
     // Events
     event UserOperationEvent(
@@ -75,7 +76,13 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
         // include every other paymaster's untouched deposit.
         if (beneficiary != address(0) && collected > 0) {
             uint256 payout = collected > address(this).balance ? address(this).balance : collected;
-            beneficiary.transfer(payout);
+            // Forward full remaining gas instead of transfer()'s 2300-gas
+            // stipend, so a contract beneficiary with normal receive logic
+            // doesn't revert the whole batch.
+            (bool sent, ) = beneficiary.call{value: payout}("");
+            if (!sent) {
+                revert BeneficiaryPayoutFailed();
+            }
         }
     }
 
@@ -99,16 +106,18 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
 
         // Parse paymaster address
         address paymaster = _parsePaymasterAndData(op.paymasterAndData);
-        uint256 requiredGas = _getRequiredGas(op);
+        // requiredGas is in gas units; deposits/payouts are denominated in wei,
+        // so convert using the op's own max fee per gas before touching balances.
+        uint256 requiredWei = _getRequiredGas(op) * _getMaxFeePerGas(op);
 
         // Deduct from paymaster deposit before the external validation call
         // so a reentrant call from the paymaster sees the debited balance.
         if (paymaster != address(0)) {
-            if (balanceOf[paymaster] < requiredGas) {
+            if (balanceOf[paymaster] < requiredWei) {
                 revert InsufficientDeposit();
             }
-            balanceOf[paymaster] -= requiredGas;
-            gasCost = requiredGas;
+            balanceOf[paymaster] -= requiredWei;
+            gasCost = requiredWei;
         }
 
         // Increment nonce before any external call for the same reason.
@@ -119,7 +128,7 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
             (, uint256 validationData) = IMinimalPaymaster(paymaster).validatePaymasterUserOp(
                 op,
                 userOpHash,
-                requiredGas
+                requiredWei
             );
 
             if (validationData != VALID_SIG) {
@@ -184,10 +193,26 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
     }
 
     /**
-     * @dev Get the hash of a user operation
+     * @dev Get the hash of a user operation. Excludes op.signature - a signer
+     *      cannot produce a signature over a hash that already embeds that same
+     *      signature, so the hash must be computed the same way it is over in
+     *      eth-infinitism's UserOperationLib.hash(): every field except signature.
      */
     function getUserOpHash(PackedUserOperation calldata userOp) public view returns (bytes32) {
-        return keccak256(abi.encode(userOp, address(this), block.chainid));
+        return keccak256(
+            abi.encode(
+                userOp.sender,
+                userOp.nonce,
+                keccak256(userOp.initCode),
+                keccak256(userOp.callData),
+                userOp.accountGasLimits,
+                userOp.preVerificationGas,
+                userOp.gasFees,
+                keccak256(userOp.paymasterAndData),
+                address(this),
+                block.chainid
+            )
+        );
     }
 
     /**
@@ -244,6 +269,13 @@ contract MinimalEntryPoint is IMinimalEntryPoint {
      */
     function _getCallGasLimit(PackedUserOperation calldata op) private pure returns (uint256) {
         return uint256(uint128(uint256(op.accountGasLimits)));
+    }
+
+    /**
+     * @dev Extract maxFeePerGas (low 128 bits) from gasFees
+     */
+    function _getMaxFeePerGas(PackedUserOperation calldata op) private pure returns (uint256) {
+        return uint256(uint128(uint256(op.gasFees)));
     }
 
     /**
