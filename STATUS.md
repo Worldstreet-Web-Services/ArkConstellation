@@ -27,7 +27,7 @@
    - `EVMChainIDMap`: Mapped `"arkconstellation-1": 11199` (locked Decisions #6 & #7) and `"arkdevnet_9000-1": 9000`.
    - `IBC Unwrap Memo`: `{"ark":{"unwrap":true}}`.
 6. **Fork Audits Completed**:
-   - `MANTRA-Chain/cosmos-sdk@v0.53.6-v8-mantra-1` vs upstream `v0.53.6` documented in `docs/proof/fork-audit-cosmos-sdk.md`.
+   - `MANTRA-Chain/cosmos-sdk@v0.53.8-v8-mantra-1` (the currently-pinned tag; full commit hash and lockstep `cosmossdk.io/api` pin are authoritative in `docs/proof/fork-audit-cosmos-sdk.md`, not re-typed here) vs upstream `v0.53.8` documented in `docs/proof/fork-audit-cosmos-sdk.md`. Supersedes the original `v0.53.6-v8-mantra-1` vs `v0.53.6` audit, retained in the same document as the baseline diff.
    - `MANTRA-Chain/evm@v0.6.2-v8-mantra-1` vs upstream `v0.6.2` documented in `docs/proof/fork-audit-cosmos-evm.md` (confirming critical ICS20 reentrancy guard).
 
 ### Smoke Test Verification

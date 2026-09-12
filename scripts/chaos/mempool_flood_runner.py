@@ -284,8 +284,17 @@ def run_mempool_flood(
         print(f"[*] All {len(raw_txs)} transactions signed with correct EIP-155 chainId={chain_id} and 0x hex prefixes.")
         print(f"\n{BOLD}[3/4] Fee market monitoring skipped (running in offline validation mode).{RESET}")
 
-    fee_scaled_up = peak_base_fee >= initial_base_fee
-    mempool_healthy = len(raw_txs) == tx_count
+    # Strict '>': at zero load peak == initial, which is not evidence of scaling.
+    # Only meaningful if blocks were actually observed during the flood.
+    fee_scaled_up = bool(blocks_tracked) and peak_base_fee > initial_base_fee
+    # Signing transactions offline proves nothing about the mempool; require
+    # that they were actually submitted and mined.
+    mempool_healthy = (
+        live_rpc
+        and len(raw_txs) == tx_count
+        and len(successful_submits) > 0
+        and mined_txs > 0
+    )
 
     print(f"\n{BOLD}[4/4] Final Results & Analysis{RESET}")
     print(f"{BOLD}{CYAN}============================================================{RESET}")
@@ -315,7 +324,8 @@ def run_mempool_flood(
         "fee_scaled_up": fee_scaled_up,
         "blocks_tracked": blocks_tracked,
         "fee_curve": fee_curve,
-        "pass": mempool_healthy
+        "executed": bool(live_rpc),
+        "pass": mempool_healthy and fee_scaled_up
     }
 
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
