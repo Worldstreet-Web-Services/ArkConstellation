@@ -2,16 +2,16 @@ package keeper
 
 import (
 	"context"
-	"strings"
 
 	errorsmod "cosmossdk.io/errors"
+	"github.com/MANTRA-Chain/mantrachain/v8/x/sanction/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 func normalizeAddress(account string) (string, error) {
-	if strings.HasPrefix(account, "0x") || strings.HasPrefix(account, "0X") {
+	if types.HasHexAddressPrefix(account) {
 		if !ethcommon.IsHexAddress(account) {
 			return "", errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid hex address: %s", account)
 		}

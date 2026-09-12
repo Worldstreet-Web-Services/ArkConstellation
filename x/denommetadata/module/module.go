@@ -3,7 +3,6 @@ package module
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"cosmossdk.io/core/appmodule"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -81,5 +80,3 @@ func (AppModule) ConsensusVersion() uint64 { return 1 }
 
 func (am AppModule) IsOnePerModuleType() {}
 func (am AppModule) IsAppModule()        {}
-
-var _ = fmt.Sprintf
