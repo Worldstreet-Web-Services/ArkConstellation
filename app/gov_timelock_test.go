@@ -293,26 +293,24 @@ func TestGovTimelockActiveOnFreshChain(t *testing.T) {
 	require.True(t, active, "a chain starting from genesis must have the timelock active")
 }
 
-// TestGovTimelockGenesisRejectsBelowMinimumDelay confirms InitGenesis itself
-// enforces the 48h minimum, not just the separate `genesis validate-genesis`
-// CLI command. A genesis produced by anything else (a script, a migration,
-// hand-edited state) must not be able to reach a running chain with a
-// shorter delay.
-func TestGovTimelockGenesisRejectsBelowMinimumDelay(t *testing.T) {
+// TestGovTimelockValidateGenesisRejectsBelowMinimumDelay confirms the
+// `genesis validate-genesis` CLI path (AppModuleBasic.ValidateGenesis, which
+// scripts/genesis/collect-gentx.sh runs before any real genesis is finalized)
+// enforces the 48h minimum. InitGenesis itself deliberately does not — see
+// the comment on GenesisState.ExecutionDelay — so this is the actual
+// enforcement point for a hand-edited or script-produced genesis.
+func TestGovTimelockValidateGenesisRejectsBelowMinimumDelay(t *testing.T) {
 	chain := SetupWithEmptyStore(t)
-	ctx := chain.NewUncachedContext(false, tmproto.Header{})
 
-	module := govtimelock.NewAppModule(chain.GovTimelockKeeper, &chain.GovKeeper)
+	basic := govtimelock.AppModuleBasic{}
 	state, err := json.Marshal(govtimelocktypes.GenesisState{
 		ActivationHeight: 1,
 		ExecutionDelay:   time.Second,
 	})
 	require.NoError(t, err)
 
-	require.PanicsWithError(t,
-		"execution delay must be at least 48h0m0s, got 1s",
-		func() { module.InitGenesis(ctx, chain.AppCodec(), state) },
-	)
+	err = basic.ValidateGenesis(chain.AppCodec(), nil, state)
+	require.ErrorContains(t, err, "execution delay must be at least 48h0m0s, got 1s")
 }
 
 // TestExportForZeroHeightResetsGovTimelockActivationHeight covers the fork
@@ -329,12 +327,22 @@ func TestExportForZeroHeightResetsGovTimelockActivationHeight(t *testing.T) {
 	ctx := chain.NewUncachedContext(false, tmproto.Header{})
 	require.NoError(t, chain.GovTimelockKeeper.SetActivationHeight(ctx, 4_000_000))
 
+	// A proposal mid-flight on the source chain, waiting out its 48h delay.
+	// Its ExecutionTime is an absolute wall-clock time that would already be
+	// in the past by the time a forked chain actually launches, letting it
+	// execute in the new chain's very first block if carried over verbatim.
+	require.NoError(t, chain.GovTimelockKeeper.Schedule(ctx, 42, time.Now().Add(48*time.Hour)))
+
 	chain.prepForZeroHeightGenesis(ctx, nil)
 
 	height, err := chain.GovTimelockKeeper.GetActivationHeight(ctx)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), height,
 		"a zero-height export must not carry over a stale activation height from the source chain")
+
+	due, err := chain.GovTimelockKeeper.Due(ctx, time.Now().Add(365*24*time.Hour))
+	require.NoError(t, err)
+	require.Empty(t, due, "a zero-height export must not carry over an in-flight schedule from the source chain")
 }
 
 // TestV8_5UpgradeHandlerActivatesOnExistingChainWithPassedProposals covers the

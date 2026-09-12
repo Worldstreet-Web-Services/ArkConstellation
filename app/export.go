@@ -249,4 +249,15 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	if err := app.GovTimelockKeeper.SetActivationHeight(ctx, 1); err != nil {
 		panic(err)
 	}
+
+	// A scheduled entry's ExecutionTime is an absolute wall-clock time from
+	// the source chain; on a fork it may already be in the past (or close to
+	// it), which would let Keeper.Due match it immediately and execute a
+	// proposal's messages in the new chain's very first block — skipping the
+	// 48h cooldown in exactly the disaster-recovery scenario the module
+	// exists to protect. Drop any in-flight schedule instead of trying to
+	// re-adjust it to a new reference time.
+	if err := app.GovTimelockKeeper.ClearSchedule(ctx); err != nil {
+		panic(err)
+	}
 }

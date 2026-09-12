@@ -77,14 +77,16 @@ func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, bz json.RawM
 	if err := json.Unmarshal(bz, &state); err != nil {
 		panic(err)
 	}
-	// AppModuleBasic.ValidateGenesis wires Validate into the separate,
-	// optional `genesis validate-genesis` CLI flow; it is not otherwise called
-	// on the path a node actually takes at startup. Call it here too so a
-	// self-contained invariant (e.g. the 48h minimum execution delay) can't
-	// reach a running chain just because it skipped that CLI step.
-	if err := state.Validate(); err != nil {
-		panic(err)
-	}
+	// InitGenesis deliberately does NOT call GenesisState.Validate() here: its
+	// 48h minimum execution delay is enforced only via the separate `genesis
+	// validate-genesis` CLI path (AppModuleBasic.ValidateGenesis) and the
+	// production genesis pipeline that runs it (scripts/genesis/collect-gentx.sh).
+	// Calling it here too would also reject the e2e (tests/e2e/genesis.go) and
+	// interchain (tests/interchain/chainsuite/config.go) test suites' genesis,
+	// which deliberately configure a sub-minimum delay so tests don't wait 48
+	// real hours — both build a real genesis.json consumed by InitChain, not
+	// just the CLI validator.
+	//
 	// GenesisState.Validate cannot see x/gov's state, so the cross-module
 	// invariants are checked here where both stores are available. Failing at
 	// InitGenesis is the right place for this: a mismatch that slipped through

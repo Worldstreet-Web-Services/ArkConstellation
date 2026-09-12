@@ -65,6 +65,16 @@ func (k Keeper) Remove(ctx context.Context, executionTime time.Time, proposalID 
 	return k.ScheduledProposals.Remove(ctx, collections.Join(executionTime, proposalID))
 }
 
+// ClearSchedule drops every scheduled entry. Used when a chain forks or
+// resets from exported state (see App.prepForZeroHeightGenesis): a scheduled
+// entry's ExecutionTime is an absolute wall-clock time carried over from the
+// source chain, so on a fork it may already be in the past — re-adjusting it
+// to a new reference time would be an arbitrary guess, so proposals that were
+// mid-flight are dropped and must be resubmitted on the new chain instead.
+func (k Keeper) ClearSchedule(ctx context.Context) error {
+	return k.ScheduledProposals.Clear(ctx, nil)
+}
+
 // SetActivationHeight records the height at which the timelock takes effect.
 // Called once, from the coordinated upgrade handler.
 func (k Keeper) SetActivationHeight(ctx context.Context, height int64) error {

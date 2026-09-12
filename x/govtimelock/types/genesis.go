@@ -19,8 +19,14 @@ type GenesisState struct {
 	// agree on behavior until the upgrade height.
 	ActivationHeight int64 `json:"activation_height"`
 	// ExecutionDelay is how long a passed proposal waits before its messages
-	// run. Zero means the module default (MinimumDelay, 48h). Validate
-	// enforces that a nonzero value is at least MinimumDelay.
+	// run. Zero means the module default (MinimumDelay, 48h). It is genesis
+	// state rather than a compile-time constant so test networks can use a
+	// short delay; production genesis must leave it unset or set it to at
+	// least MinimumDelay, which Validate enforces via the `genesis
+	// validate-genesis` CLI path (AppModuleBasic.ValidateGenesis) — not via
+	// InitGenesis, which intentionally skips this check so e2e/interchain test
+	// genesis (a real genesis.json fed to InitChain, not just the CLI) can use
+	// a short delay without a 48-real-hour wait.
 	ExecutionDelay time.Duration `json:"execution_delay"`
 }
 

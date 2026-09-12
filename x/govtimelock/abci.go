@@ -153,6 +153,15 @@ func processEndedVotingPeriods(
 		return err
 	}
 
+	// The configured delay cannot change mid-block; fetch it at most once per
+	// call rather than once per passing proposal, so a block that concludes
+	// several proposals' voting periods at once doesn't re-read the same
+	// value from the KVStore for each one.
+	var (
+		delay       time.Duration
+		delayLoaded bool
+	)
+
 	for _, prop := range activeProps {
 		proposal, err := govKeeper.Proposals.Get(ctx, prop.Key.K2())
 		switch {
@@ -194,9 +203,12 @@ func processEndedVotingPeriods(
 			// Pre-activation: stock x/gov semantics — execute in this block.
 			proposal, tagValue, logMsg = executeProposal(ctx, govKeeper, proposal, logger)
 		case passes:
-			delay, err := timelockKeeper.GetExecutionDelay(ctx, fallbackDelay)
-			if err != nil {
-				return err
+			if !delayLoaded {
+				delay, err = timelockKeeper.GetExecutionDelay(ctx, fallbackDelay)
+				if err != nil {
+					return err
+				}
+				delayLoaded = true
 			}
 			executionTime := ctx.BlockTime().Add(delay)
 			if err := timelockKeeper.Schedule(ctx, proposal.Id, executionTime); err != nil {

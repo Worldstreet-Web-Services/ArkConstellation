@@ -40,6 +40,18 @@ func CreateUpgradeHandler(
 		// SetActivationHeight instead, so pre-seed the version map to make
 		// RunMigrations treat govtimelock as already initialized and skip its
 		// InitGenesis entirely.
+		//
+		// This is deliberately a bypass, not a scope fix to
+		// validateAgainstGov's invariant (x/govtimelock/module.go): that check
+		// cannot distinguish "this PROPOSAL_STATUS_PASSED proposal predates the
+		// timelock and already executed under old semantics" from "this one is
+		// stranded, its messages will never run" — the status enum carries no
+		// such marker, by design (see the EndBlocker doc comment's "Status
+		// semantics caveat"). Any future code path that needs to run
+		// govtimelock's InitGenesis on an existing chain (a later migration, a
+		// re-import) hits the same ambiguity and must route around it the same
+		// way — not by loosening the invariant, which exists precisely to catch
+		// a genuinely stranded proposal in the genesis-import/export round trip.
 		if keepers.GovTimelockKeeper != nil {
 			vm[govtimelocktypes.ModuleName] = govtimelock.ConsensusVersion
 		}
